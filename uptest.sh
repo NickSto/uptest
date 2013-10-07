@@ -23,12 +23,24 @@ while [ 1 ]; do
     echo -ne "$dest\t$ms\t"
   else
     echo -ne "**********************DROPPED**********************\t"
-    sleeptime=5
+    #sleeptime=5
   fi
   
   now=$(date +%s)
   elapsed=$((now - last))
   #echo -n "start: $elapsed "
+  ratio=$((elapsed/sleeptime))
+  if [ $ratio -gt 1 ]; then
+    if [ ${#response} -gt 0 ]; then
+      line="\n$dest\t$ms\t(repeat)"
+    else
+      line="\n**********************DROPPED**********************\t(repeat)"
+    fi
+    while [ $ratio -gt 1 ]; do
+      echo -ne "$line"
+      ratio=$((ratio-1))
+    done
+  fi
   while [ $elapsed -lt $sleeptime ]; do
     echo -n '*'
     sleep 1
