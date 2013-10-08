@@ -16,31 +16,32 @@ fi
 while [ 1 ]; do
   last=$(date +%s)
   sleeptime=$sleep
+  humantime=$(date '+%Y-%m-%d %H:%M:%S')
   response=$(ping -c 1 google.com 2>/dev/null | grep 'bytes from')
   if [ ${#response} -gt 0 ]; then
-    dest=$(echo $response | sed 's/^64 bytes from \(.*\)icmp_req=[0-9]\+ ttl=[0-9]\+ time=.*$/\1/')
+    dest=$(echo $response | sed -E 's/^.*\(([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)\).*$/\1/')
     ms=$(echo $response | sed 's/^64 bytes from.*icmp_req=[0-9]\+ ttl=[0-9]\+ time=\(.*\)$/\1/')
-    echo -ne "$dest\t$ms\t"
+    result="$ms\tfrom $dest"
   else
-    echo -ne "**********************DROPPED**********************\t"
+    result="**********DROPPED**********"
     #sleeptime=5
   fi
   
   now=$(date +%s)
   elapsed=$((now - last))
-  #echo -n "start: $elapsed "
   ratio=$((elapsed/sleeptime))
-  if [ $ratio -gt 1 ]; then
-    if [ ${#response} -gt 0 ]; then
-      line="\n$dest\t$ms\t(repeat)"
-    else
-      line="\n**********************DROPPED**********************\t(repeat)"
-    fi
-    while [ $ratio -gt 1 ]; do
-      echo -ne "$line"
-      ratio=$((ratio-1))
-    done
+  #echo -n "start: $elapsed "
+  if [ $ratio -eq 0 ]; then
+    ratio=1
   fi
+  while [ $ratio -gt 0 ]; do
+    echo -ne "$result\t$humantime\t"
+    ratio=$((ratio-1))
+    if [ $ratio -gt 0 ]; then
+      echo
+    fi
+  done
+
   while [ $elapsed -lt $sleeptime ]; do
     echo -n '*'
     sleep 1
