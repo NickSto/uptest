@@ -50,7 +50,7 @@ sub build_data {
 	my $errors = 0;
 	while (<$log_fh>) {
 		
-		if (m/(^[01]),?\s+(\d{10})/) {
+		if (m/^([0-9.]+),?\s+(\d{10})/) {
 			push(@data, { success => $1, time => $2 } );
 		} else {
 			warn "Error: Line improperly formatted; skipping: $_\n";

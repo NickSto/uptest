@@ -1,9 +1,15 @@
 #!/usr/bin/env bash
 SLEEP_DEFAULT=15
-USAGE="USAGE: $(basename $0) [sleep seconds]
-  e.g. $(basename $0) 10
-default sleep: 15 sec"
+LOGFILE_DEFAULT="$HOME/aa/code/0projects/uptest/uptest_log.txt"
+USAGE="USAGE: $(basename $0) [sleep seconds] [-l [log]]
+  e.g. $(basename $0) 10 -l log.txt
+sleep seconds: Optional, default is $SLEEP_DEFAULT seconds.
+-l: Optional, default is no logging. Sleep seconds must be given if -l is.
+    If -l is given alone, it will log to the default file:
+      $LOGFILE_DEFAULT
+    If a filename is given after -l, it will log to that file."
 sleep=$SLEEP_DEFAULT
+logfile=$LOGFILE_DEFAULT
 if [ "$1" ]; then
   if [[ "$1" =~ ^[0-9]+$ ]]; then
     sleep="$1"
@@ -12,18 +18,36 @@ if [ "$1" ]; then
     exit 1
   fi
 fi
+if [ "$2" ] && [ "$2" == "-l" ]; then
+  log="true"
+  if [ "$3" ]; then
+    logfile="$3"
+  fi
+  echo "Logging to file $logfile"
+fi
 
 while [ 1 ]; do
   last=$(date +%s)
   sleeptime=$sleep
   humantime=$(date '+%Y-%m-%d %H:%M:%S')
   response=$(ping -n -c 1 google.com 2>/dev/null | grep 'bytes from')
+  # todo: decide success based on the summary line ("1 received")
   if [ ${#response} -gt 0 ]; then
     dest=$(echo $response | sed -E 's/^.*from ([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+): .*$/\1/')
-    ms=$(echo $response | sed 's/^[0-9]\+ bytes from.*icmp_req=[0-9]\+ ttl=[0-9]\+ time=\(.*\)$/\1/')
-    result="$ms\tfrom $dest"
+    ms=$(echo $response | sed -E 's/^[0-9]+ bytes from.*icmp_req=[0-9]+ ttl=[0-9]+ time=([0-9.]+) ms$/\1/')
+    if [[ ! $ms =~ [0-9.]{1,6} ]]; then
+      echo -e "Error: time regex failed to match line:\n$response" 1>&2
+      ms=0
+    fi
+    result="$ms ms\tfrom $dest"
+    if [ "$log" ]; then
+      echo -e "$ms\t$last" >> "$logfile"
+    fi
   else
     result="**********DROPPED**********"
+    if [ "$log" ]; then
+      echo -e "-\t$last" >> "$logfile"
+    fi
     #sleeptime=5
   fi
   
