@@ -19,7 +19,7 @@ use strict;
 
 my $BIN_SIZE_DEFAULT = 60; #minutes;
 my $bin_size = $BIN_SIZE_DEFAULT * 60;
-my $LOG_FILE_DEFAULT = "uptime_log.txt";
+my $LOG_FILE_DEFAULT = "uptest_log.txt";
 
 my $log_file = $LOG_FILE_DEFAULT;
 if (@ARGV) {
