@@ -17,10 +17,10 @@ while [ 1 ]; do
   last=$(date +%s)
   sleeptime=$sleep
   humantime=$(date '+%Y-%m-%d %H:%M:%S')
-  response=$(ping -c 1 google.com 2>/dev/null | grep 'bytes from')
+  response=$(ping -n -c 1 google.com 2>/dev/null | grep 'bytes from')
   if [ ${#response} -gt 0 ]; then
-    dest=$(echo $response | sed -E 's/^.*\(([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)\).*$/\1/')
-    ms=$(echo $response | sed 's/^64 bytes from.*icmp_req=[0-9]\+ ttl=[0-9]\+ time=\(.*\)$/\1/')
+    dest=$(echo $response | sed -E 's/^.*from ([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+): .*$/\1/')
+    ms=$(echo $response | sed 's/^[0-9]\+ bytes from.*icmp_req=[0-9]\+ ttl=[0-9]\+ time=\(.*\)$/\1/')
     result="$ms\tfrom $dest"
   else
     result="**********DROPPED**********"
