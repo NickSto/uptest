@@ -46,7 +46,7 @@ while [ 1 ]; do
   else
     result="**********DROPPED**********"
     if [ "$log" ]; then
-      echo -e "-\t$last" >> "$logfile"
+      echo -e "0\t$last" >> "$logfile"
     fi
     #sleeptime=5
   fi

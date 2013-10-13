@@ -1,5 +1,4 @@
-#!/usr/bin/perl -w
-#upanalyze.pl
+#!/usr/bin/env perl
 =begin comment
 
 For analyzing the log information produced by uptest.pl
@@ -16,6 +15,7 @@ note to self:
 
 =cut comment
 use strict;
+use warnings;
 
 my $BIN_SIZE_DEFAULT = 60; #minutes;
 my $bin_size = $BIN_SIZE_DEFAULT * 60;
