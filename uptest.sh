@@ -40,14 +40,10 @@ while [ 1 ]; do
       ms=0
     fi
     result="$ms ms\tfrom $dest"
-    if [ "$log" ]; then
-      echo -e "$ms\t$last" >> "$logfile"
-    fi
+    logline="$ms\t$last"
   else
     result="**********DROPPED**********"
-    if [ "$log" ]; then
-      echo -e "0\t$last" >> "$logfile"
-    fi
+    logline="0\t$last"
     #sleeptime=5
   fi
   
@@ -60,6 +56,9 @@ while [ 1 ]; do
   fi
   while [ $ratio -gt 0 ]; do
     echo -ne "$result\t$humantime\t"
+    if [ "$log" ]; then
+      echo -e "$logline" >> "$logfile"
+    fi
     ratio=$((ratio-1))
     if [ $ratio -gt 0 ]; then
       echo

@@ -1,29 +1,33 @@
 #!/usr/bin/env perl
 =begin comment
-
-For analyzing the log information produced by uptest.pl
-
-Provide the name of the log file to be analyzed as a command line option.
-By default, the file "uptime_log.txt" will be analyzed.
-
-Right now it prints a histogram of the dropped packet percentage for each hour.
-The period can be changed from an hour by altering the constant
-$BIN_SIZE_DEFAULT below.
-
 note to self:
 ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst) = localtime(time);
-
 =cut comment
 use strict;
 use warnings;
 
 my $BIN_SIZE_DEFAULT = 60; #minutes;
-my $bin_size = $BIN_SIZE_DEFAULT * 60;
 my $LOG_FILE_DEFAULT = "uptest_log.txt";
 
+my $USAGE = "USAGE: ./upanalyze.pl logfile.txt
+
+For analyzing the log information produced by uptest.pl
+Provide the name of the log file to be analyzed as a command line option.
+By default, the file \"$LOG_FILE_DEFAULT\" will be analyzed.
+
+It prints a histogram of the dropped packet percentage for each hour.
+The period can be changed from an hour by altering the constant
+\$BIN_SIZE_DEFAULT.\n";
+
+my $bin_size = $BIN_SIZE_DEFAULT * 60;
 my $log_file = $LOG_FILE_DEFAULT;
+
 if (@ARGV) {
 	$log_file = shift @ARGV;
+	if ($log_file eq '-h') {
+		print $USAGE;
+		exit;
+	}
 }
 
 my @data = build_data($log_file);
