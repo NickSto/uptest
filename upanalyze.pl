@@ -92,7 +92,11 @@ sub print_graph {
 			$replies = 0;
 		}
 		$pings++;
-		$replies += $$entry{success};
+		my $success = 0;
+		if ($$entry{success}) {
+			$success = 1;
+		}
+		$replies += $success;
 	}
 }
 
