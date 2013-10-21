@@ -79,33 +79,26 @@ def main():
   frequency = options.frequency
 
   # Stack holding tuples of (process, queue) for each ongoing ping.
-  # The plan: push new pings onto the end, and search backwards through them
-  # from the end, newest to oldest, and use the first result you find. Then
-  # discard that ping and everything older.
+  # I push new pings onto the end, then search backwards through them from the
+  # end, newest to oldest, and use the first result I find. Then I discard that
+  # ping and everything older.
   pings = []
 
   while True:
 
-    print "Starting at the top"
+    print "Starting at the top of the loop"
     queue = multiprocessing.Queue()
     process = multiprocessing.Process(target=ping, args=(queue, server))
-    # print "firing off another one"
     process.start()
 
-    # print "adding to stack"
     pings.append((process, queue))
 
-    print "checking status"
-    print "\t"+str(getstatus(pings))
-
-    # print queue.get()
+    status = str(getstatus(pings))
+    print status
 
     # TODO: replace with sleeping 1 sec at a time, waking up, checking clock,
     # and proceeding if it's time.
-    # print "going to sleep"
     time.sleep(frequency)
-    # print "waking up"
-    # time.sleep(1)
 
 
 def ping(queue, server):
@@ -116,31 +109,8 @@ def ping(queue, server):
   print "about to run ping: "+str(timestamp)
   exit_status = subprocess.call(['ping', '-n', '-c', '1', server],
     stdout=devnull, stderr=devnull)
-  print "ran it! exit status = "+str(exit_status)
 
   queue.put([exit_status, timestamp])
-  print "put it in the queue!"
-
-  # Safe retrieval idiom taken from: http://stackoverflow.com/a/1541117/726773
-  queue.put(None)
-  result = []
-  for i in iter(queue.get, None):
-    result.append(i)
-
-  print result
-  
-  # try:
-  #   result = queue.get(True, 0)
-  #   print "got a result from inside! "+str(result)
-  # except Queue.Empty:
-  #   result = None
-  #   print "it threw a Queue.Empty, from inside!"
-
-
-def pingdummy(queue, server):
-  timestamp = int(time.time())
-  time.sleep(random.randint(0,10))
-  queue.put([0, timestamp])
 
 
 def getstatus(pings):
@@ -148,37 +118,45 @@ def getstatus(pings):
   (exitcode, timestamp) if it finds a finished ping,
   None if not."""
 
-  print "inside, at the top"
   latest = -1
   result = None
   for i in reversed(range(len(pings))):
     process = pings[i][0]
     queue = pings[i][1]
     if not process.is_alive():
-      print "found a finished one, trying .get()"
-      try:
-        result = queue.get(True, 0)
-      except Queue.Empty:
-        result = None
-      if result:
+      result = qget(queue)
+      if result != None:
         latest = i
         break
-      else:
-        print "refused to give me anything"
-  print "finished checking them, latest: "+str(latest)
+  print [i for i in range(len(pings))]
+  print "finished search, latest: "+str(latest)
 
-  # if latest < 0:
-  #   print "no result"
-  #   return None
-  # else:
-  #   queue = pings[latest][1]
-  #   print "finished, about to .get()"
-  #   try:
-  #     return queue.get(True, 0)
-  #   except Queue.Empty:
-  #     return None
+  if latest >= 0:
+    # remove all the pings in the list at or before latest
+    for i in reversed(range(0,latest+1)):
+      del(pings[i])
 
   return result
+
+def qget(queue):
+  """Because Queue.get() is apparently broken. Alternative retrieval idiom taken
+  from: http://stackoverflow.com/a/1541117/726773
+  Returns first item in Queue or None, if it was empty. NOTE: no items in the
+  Queue can be None."""
+  items = []
+  queue.put(None) # sentinel for end of Queue
+  for item in iter(queue.get, None):
+    items.append(item)
+  if len(items) > 0:
+    return items[0]
+  else:
+    return None
+
+
+def pingdummy(queue, server):
+  timestamp = int(time.time())
+  time.sleep(random.randint(0,10))
+  queue.put([0, timestamp])
 
 def testping():
 
@@ -214,9 +192,6 @@ def testping():
     time.sleep(1)
 
 if __name__ == "__main__":
-  # main()
+  main()
   # testping()
-  queue = multiprocessing.Queue()
-  process = multiprocessing.Process(target=ping, args=(queue, 'microsoft.com'))
-  process.start()
 
