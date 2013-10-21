@@ -9,15 +9,19 @@ use warnings;
 my $BIN_SIZE_DEFAULT = 60; #minutes;
 my $LOG_FILE_DEFAULT = "uptest_log.txt";
 
-my $USAGE = "USAGE: ./upanalyze.pl logfile.txt
+my $USAGE = "USAGE: ./upanalyze.pl [-b minutes] [log filename]
+  e.g.
+./upanalyze.pl -b 15 logfile.txt
+./upanalyze.pl logfile.txt
+./upanalyze.pl -b 15
 
 For analyzing the log information produced by uptest.pl
 Provide the name of the log file to be analyzed as a command line option.
 By default, the file \"$LOG_FILE_DEFAULT\" will be analyzed.
 
 It prints a histogram of the dropped packet percentage for each hour.
-The period can be changed from an hour by altering the constant
-\$BIN_SIZE_DEFAULT.
+The period can be changed from an hour with the -b option (but making it too
+small will cause an error, with the threshold varying by the log file).
 
 NOTE: The log file must be a contiguous period of time. It won't be accurate
 if it contains multiple recording periods concatenated together.\n";
@@ -26,13 +30,21 @@ my $bin_size = $BIN_SIZE_DEFAULT * 60;
 my $log_file = $LOG_FILE_DEFAULT;
 
 if (@ARGV) {
-  $log_file = shift @ARGV;
-  if ($log_file eq '-h') {
+  my $arg1 = shift @ARGV;
+  if ($arg1 eq '-h') {
     print $USAGE;
     exit;
+  } elsif ($arg1 eq '-b') {
+    my $bin_size_custom = shift @ARGV;
+    $bin_size = $bin_size_custom * 60;
+    if (@ARGV) {
+      $log_file = shift @ARGV;
+    }
+  } else {
+    $log_file = $arg1;
   }
 }
-
+print "bin size: $bin_size\n";
 my @data = build_data($log_file);
 
 # Add an adaptive bin-size-determining subroutine?
