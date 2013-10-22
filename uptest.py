@@ -104,7 +104,6 @@ def main():
     pings.append((process, queue))
 
     status = getstatus(pings)
-    if debug: print status
 
     if status is not None and status[1] > last_time:
       if status[0] == 0:
@@ -154,11 +153,11 @@ def getstatus(pings):
     queue = pings[i][1]
     if not process.is_alive():
       result = qget(queue)
-      if result is None:
+      if result is not None:
         latest = i
         break
-  if debug: print [i for i in range(len(pings))]
-  if debug: print "finished search, latest: "+str(latest)
+  if debug: print "latest = "+str(latest)+" out of "+str([i for i in range(len(pings))])
+  if debug: print "result = "+str(result)
 
   if latest >= 0:
     # remove all the pings in the list at or before latest
