@@ -85,6 +85,7 @@ def main():
   
   server    = options.server
   frequency = options.frequency
+  log_file  = options.log_file
 
   # Stack holding tuples of (process, queue) for each ongoing ping.
   # I push new pings onto the end, then search backwards through them from the
@@ -123,6 +124,9 @@ def main():
     sys.stdout.write(date.strftime(DATEFORMAT)+' ')
 
     sys.stdout.write("\n")
+
+    if log_file:
+      writelog(log_file, up)
 
     # TODO: replace with sleeping 1 sec at a time, waking up, checking clock,
     # and proceeding if it's time.
@@ -179,6 +183,23 @@ def qget(queue):
     return items[0]
   else:
     return None
+
+
+def writelog(log_file, up):
+  """The log file rules/format:
+  If up is None, record nothing (no information on connection status)
+  If up is True, record a 1
+  If up is False, record a 0"""
+
+  timestr = str(int(time.time()))
+  if up:
+    statusstr = '1'
+  else:
+    statusstr = '0'
+
+  if up is not None:
+    with open(log_file, 'a') as log_fh:
+      log_fh.write(statusstr+"\t"+timestr+"\n")
 
 
 def fail(message):
