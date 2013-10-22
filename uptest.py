@@ -18,13 +18,15 @@ import os
 import sys
 import time
 import random
+import datetime
 import subprocess
 from optparse import OptionParser
 import multiprocessing
 import Queue
 
 
-DEFAULTS = {'log_file':'', 'frequency':5, 'curl':False, 'server':'google.com'}
+DEFAULTS = {'log_file':'', 'frequency':5, 'curl':False, 'server':'google.com',
+  'debug':False}
 USAGE = """Usage: %prog -f 15 -l path/to/log.txt -s server.com"""
 DESCRIPTION = """This periodically tests your connection, showing whether your
 Internet is currently up or down. It works by testing if it can reach an
@@ -37,11 +39,14 @@ it's the correct one.
 All options are optional."""
 EPILOG=""""""
 
+DOWN_TEXT  = "***********DOWN***********"
+UP_TEXT    = "Connected!                "
+NO_TEXT    = "no information yet        "
+DATEFORMAT = '%Y-%m-%d %I:%M:%S %p'
 
-def fail(message):
-  sys.stderr.write(message+"\n")
-  sys.exit(1)
 
+debug = False
+if '-d' in sys.argv or '--debug' in sys.argv: debug = True
 
 def get_options(defaults, usage, description='', epilog=''):
   """Get options, print usage text."""
@@ -65,6 +70,9 @@ def get_options(defaults, usage, description='', epilog=''):
       +'is blocked on some (silly) networks, but web requests never are. This '
       +'makes a HEAD request (option -I), which only asks the server to return '
       +'a header (in order to go easy on the server).'))
+  parser.add_option('-d', '--debug', dest='debug', action='store_const',
+    const=not(defaults.get('debug')), default=defaults.get('debug'),
+    help=('Turn on debug mode.'))
 
   (options, arguments) = parser.parse_args()
 
@@ -75,7 +83,7 @@ def main():
 
   (options, arguments) = get_options(DEFAULTS, USAGE, DESCRIPTION, EPILOG)
   
-  server =    options.server
+  server    = options.server
   frequency = options.frequency
 
   # Stack holding tuples of (process, queue) for each ongoing ping.
@@ -83,18 +91,39 @@ def main():
   # end, newest to oldest, and use the first result I find. Then I discard that
   # ping and everything older.
   pings = []
+  up = None
+  last_time = int(time.time()) - 1
 
   while True:
 
-    print "Starting at the top of the loop"
+    if debug: print "Starting at the top of the loop"
     queue = multiprocessing.Queue()
     process = multiprocessing.Process(target=ping, args=(queue, server))
     process.start()
 
     pings.append((process, queue))
 
-    status = str(getstatus(pings))
-    print status
+    status = getstatus(pings)
+    if debug: print status
+
+    if status is not None and status[1] > last_time:
+      if status[0] == 0:
+        up = True
+      else:
+        up = False
+      last_time = status[1]
+    date = datetime.datetime.fromtimestamp(float(last_time))
+
+    if up is None:
+      sys.stdout.write(NO_TEXT+' ')
+    elif up:
+      sys.stdout.write(UP_TEXT+' ')
+    else:
+      sys.stdout.write(DOWN_TEXT+' ')
+
+    sys.stdout.write(date.strftime(DATEFORMAT)+' ')
+
+    sys.stdout.write("\n")
 
     # TODO: replace with sleeping 1 sec at a time, waking up, checking clock,
     # and proceeding if it's time.
@@ -106,7 +135,7 @@ def ping(queue, server):
   devnull = open('/dev/null', 'w')
 
   timestamp = int(time.time())
-  print "about to run ping: "+str(timestamp)
+  if debug: print "Starting ping: "+str(timestamp)
   exit_status = subprocess.call(['ping', '-n', '-c', '1', server],
     stdout=devnull, stderr=devnull)
 
@@ -125,11 +154,11 @@ def getstatus(pings):
     queue = pings[i][1]
     if not process.is_alive():
       result = qget(queue)
-      if result != None:
+      if result is None:
         latest = i
         break
-  print [i for i in range(len(pings))]
-  print "finished search, latest: "+str(latest)
+  if debug: print [i for i in range(len(pings))]
+  if debug: print "finished search, latest: "+str(latest)
 
   if latest >= 0:
     # remove all the pings in the list at or before latest
@@ -151,6 +180,11 @@ def qget(queue):
     return items[0]
   else:
     return None
+
+
+def fail(message):
+  sys.stderr.write(message+"\n")
+  sys.exit(1)
 
 
 def pingdummy(queue, server):
