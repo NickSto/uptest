@@ -1,5 +1,8 @@
 #!/usr/bin/python
-# TODO: Add testing for wifi hotspot login pages
+# TODO:
+# Add fourth status: "waiting.."
+# Print how long ago the last finished ping was
+# Add testing for wifi hotspot login pages
 # - look for expected result from curl
 #
 # Notes:
@@ -17,6 +20,7 @@
 import os
 import sys
 import time
+import signal
 import random
 import datetime
 import subprocess
@@ -87,14 +91,16 @@ def main():
   frequency = options.frequency
   log_file  = options.log_file
 
+  signal.signal(signal.SIGINT, sigint_handler)
+
   # Stack holding tuples of (process, queue) for each ongoing ping.
   # I push new pings onto the end, then search backwards through them from the
   # end, newest to oldest, and use the first result I find. Then I discard that
   # ping and everything older.
   pings = []
+
   up = None
   last_time = int(time.time()) - 1
-
   while True:
 
     if debug: print "Starting at the top of the loop"
@@ -170,6 +176,7 @@ def getstatus(pings):
 
   return result
 
+
 def qget(queue):
   """Because Queue.get() is apparently broken. Alternative retrieval idiom taken
   from: http://stackoverflow.com/a/1541117/726773
@@ -200,6 +207,11 @@ def writelog(log_file, up):
   if up is not None:
     with open(log_file, 'a') as log_fh:
       log_fh.write(statusstr+"\t"+timestr+"\n")
+
+
+def sigint_handler(signal, frame):
+  print
+  sys.exit(0)
 
 
 def fail(message):
