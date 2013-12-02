@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-SLEEP_DEFAULT=15
+SLEEP_DEFAULT=5
 LOGFILE_DEFAULT="$HOME/aa/code/0projects/uptest/uptest_log.txt"
 USAGE="USAGE: $(basename $0) [sleep seconds] [-l [log]]
   e.g. $(basename $0) 10 -l log.txt
