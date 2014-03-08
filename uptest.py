@@ -1,22 +1,51 @@
 #!/usr/bin/python
-# TODO:
-# Add fourth status: "waiting.."
-# Print how long ago the last finished ping was
-# Add testing for wifi hotspot login pages
-# - look for expected result from curl
-#
-# Notes:
-# ping exit statuses
-#   nonzero:
-#     - google.com with no connection
-#       - "curl: (6) Couldn't resolve host 'google.com'"
-#     - another IP on the LAN that may or may not exist (silent either way)
-#       - "From 192.168.7.207 icmp_seq=1 Destination Host Unreachable"
-#       - but ping finished and reported statistics (100% packet loss)
-#     - no interface is up (no ethernet wire, not on a wifi network)
-#       - "connect: Network is unreachable"
-#   zero:
-#     - localhost (100% response)
+"""
+Reorganization:
+Right now the model is detached from individual pings. Every 5 seconds it wakes
+up, checks the recent pings, and updates the status of whether it's up or down,
+then reports that. So every 5 seconds it reports the current status, regardless
+of what pings have come back or not.
+But I need to change it completely, back to a ping-centric model. What's more
+useful to report is the individual pings, not the abstract "status". What that
+would look like:
+Wake up every 0.1 seconds. If it's time for another ping, send one off. Check
+the recent pings, find the most recent one that returned a result. If you find
+one, check if there are ones before it that you're still waiting on. If so,
+print "missing" or something like it for each one. Then print the result for the
+one that did return.
+- Still not 100% on what to print when, though.
+  - In the case where you skip some missing pings
+  - Or when you don't find any recent results and you're still waiting.
+    - For this I think I can use the same queues uptest.sh gives.
+      - After sending a ping, print a newline. Until it gets some results to
+        print, you'll be able to visually see that it's hung on a ping.
+
+Interface features uptest.sh has that're still missing here:
+* ms each ping took
+  - will really require capturing & processing ping stdout
+* Printing the *stars* to show time until next ping
+
+TODO:
+* Change third status to "waiting.."
+* Print how long ago the last finished ping was
+* Replace static sleep with sleep based on elapsed clock time
+* Change output to one report per ping (see "CURRENT STATUS" for 2013-10-23)
+* Add testing for wifi hotspot login pages
+  - look for expected result from curl
+
+Notes:
+ping exit statuses
+  nonzero:
+    - google.com with no connection
+      - "curl: (6) Couldn't resolve host 'google.com'"
+    - another IP on the LAN that may or may not exist (silent either way)
+      - "From 192.168.7.207 icmp_seq=1 Destination Host Unreachable"
+      - but ping finished and reported statistics (100% packet loss)
+    - no interface is up (no ethernet wire, not on a wifi network)
+      - "connect: Network is unreachable"
+  zero:
+    - localhost (100% response)
+"""
 import os
 import sys
 import time
@@ -33,7 +62,7 @@ DEFAULTS = {'log_file':'', 'frequency':5, 'curl':False, 'server':'google.com',
   'debug':False}
 USAGE = """Usage: %prog -f 15 -l path/to/log.txt -s server.com"""
 DESCRIPTION = """This periodically tests your connection, showing whether your
-Internet is currently up or down. It works by testing if it can reach an
+internet is currently up or down. It works by testing if it can reach an
 external server, to make sure there is no block at any point in your connection.
 Dropped packets mean it's "down", returned ones mean it's "up". Latency isn't
 taken into account.
@@ -50,7 +79,8 @@ DATEFORMAT = '%Y-%m-%d %I:%M:%S %p'
 
 
 debug = False
-if '-d' in sys.argv or '--debug' in sys.argv: debug = True
+if '-d' in sys.argv or '--debug' in sys.argv:
+  debug = True
 
 def get_options(defaults, usage, description='', epilog=''):
   """Get options, print usage text."""
@@ -70,7 +100,8 @@ def get_options(defaults, usage, description='', epilog=''):
       +'of connectivity is to try to reach a remote host. Default is %default.')
   parser.add_option('-c', '--curl', dest='curl', action='store_const',
     const=not(defaults.get('curl')), default=defaults.get('curl'),
-    help=('Use curl instead of ping as the connectivity test. Ping '
+    help=('***NOT IMPLEMENTED YET***\n'
+      +'Use curl instead of ping as the connectivity test. Ping '
       +'is blocked on some (silly) networks, but web requests never are. This '
       +'makes a HEAD request (option -I), which only asks the server to return '
       +'a header (in order to go easy on the server).'))
@@ -110,7 +141,10 @@ def main():
 
     pings.append((process, queue))
 
-    status = getstatus(pings)
+    # Pause so we catch the ping we just sent this time around instead of next
+    time.sleep(0.1)
+
+    status = get_status(pings)
 
     if status is not None and status[1] > last_time:
       if status[0] == 0:
@@ -119,6 +153,8 @@ def main():
         up = False
       last_time = status[1]
     date = datetime.datetime.fromtimestamp(float(last_time))
+
+    sys.stdout.write("\n")
 
     if up is None:
       sys.stdout.write(NO_TEXT+' ')
@@ -129,29 +165,35 @@ def main():
 
     sys.stdout.write(date.strftime(DATEFORMAT)+' ')
 
-    sys.stdout.write("\n")
+    sys.stdout.flush()
 
     if log_file:
       writelog(log_file, up)
 
-    # TODO: replace with sleeping 1 sec at a time, waking up, checking clock,
-    # and proceeding if it's time.
     time.sleep(frequency)
 
 
 def ping(queue, server):
 
-  devnull = open('/dev/null', 'w')
+  devnull = open(os.devnull, 'w')
 
   timestamp = int(time.time())
   if debug: print "Starting ping: "+str(timestamp)
-  exit_status = subprocess.call(['ping', '-n', '-c', '1', server],
-    stdout=devnull, stderr=devnull)
+  try:
+    output = subprocess.call(['ping', '-n', '-c', '1', server],
+      stdout=devnull, stderr=devnull)
+    exit_status = 0
+  except subprocess.CalledProcessError as cpe:
+    output = cpe.output
+    exit_status = cpe.returncode
+  except OSError:
+    output = ''
+    exit_status = 1
 
   queue.put([exit_status, timestamp])
 
 
-def getstatus(pings):
+def get_status(pings):
   """Return values:
   (exitcode, timestamp) if it finds a finished ping,
   None if not."""
@@ -162,7 +204,7 @@ def getstatus(pings):
     process = pings[i][0]
     queue = pings[i][1]
     if not process.is_alive():
-      result = qget(queue)
+      result = get_queue(queue)
       if result is not None:
         latest = i
         break
@@ -177,7 +219,7 @@ def getstatus(pings):
   return result
 
 
-def qget(queue):
+def get_queue(queue):
   """Because Queue.get() is apparently broken. Alternative retrieval idiom taken
   from: http://stackoverflow.com/a/1541117/726773
   Returns first item in Queue or None, if it was empty. NOTE: no items in the
@@ -192,7 +234,7 @@ def qget(queue):
     return None
 
 
-def writelog(log_file, up):
+def write_log(log_file, up):
   """The log file rules/format:
   If up is None, record nothing (no information on connection status)
   If up is True, record a 1
@@ -224,7 +266,7 @@ def pingdummy(queue, server):
   time.sleep(random.randint(0,10))
   queue.put([0, timestamp])
 
-def testping():
+def test_ping():
 
   queue = multiprocessing.Queue()
   process = multiprocessing.Process(target=ping, args=(queue, 'microsoft.com'))
@@ -259,5 +301,5 @@ def testping():
 
 if __name__ == "__main__":
   main()
-  # testping()
+  # test_ping()
 
