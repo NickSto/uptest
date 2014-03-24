@@ -1,0 +1,11 @@
+
+SUCCESS: ping -c 1 -n google.com
+====================
+PING google.com (74.125.131.100) 56(84) bytes of data.
+64 bytes from 74.125.131.100: icmp_req=1 ttl=39 time=183 ms
+
+--- google.com ping statistics ---
+1 packets transmitted, 1 received, 0% packet loss, time 0ms
+rtt min/avg/max/mdev = 183.205/183.205/183.205/0.000 ms
+====================
+
