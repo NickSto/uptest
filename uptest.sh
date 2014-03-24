@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+SILENCE="$HOME/.nbsstate/SILENCE"
 SLEEP_DEFAULT=5
 LOGFILE_DEFAULT="$HOME/aa/code/0projects/uptest/uptest_log.txt"
 USAGE="USAGE: $(basename $0) [sleep seconds] [-l [log]]
@@ -7,7 +8,8 @@ sleep seconds: Optional, default is $SLEEP_DEFAULT seconds.
 -l: Optional, default is no logging. Sleep seconds must be given if -l is.
     If -l is given alone, it will log to the default file:
       $LOGFILE_DEFAULT
-    If a filename is given after -l, it will log to that file."
+    If a filename is given after -l, it will log to that file.
+    If silence file $SILENCE exists, it will stop logging until it is gone."
 sleep=$SLEEP_DEFAULT
 logfile=$LOGFILE_DEFAULT
 if [ "$1" ]; then
@@ -29,6 +31,11 @@ fi
 while [ 1 ]; do
   last=$(date +%s)
   sleeptime=$sleep
+  if [[ -f "$SILENCE" ]]; then
+    echo "Silence file $SILENCE exists. Skipping ping.."
+    sleep $sleeptime
+    continue
+  fi
   humantime=$(date '+%Y-%m-%d %H:%M:%S')
   response=$(ping -n -c 1 google.com 2>/dev/null | grep 'bytes from')
   # todo: decide success based on the summary line ("1 received")
