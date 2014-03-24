@@ -24,13 +24,13 @@ SILENCE_FILENAME = 'SILENCE'
 HISTORY_FILENAME = 'uphistory.txt'
 STATUS_FILENAME = 'upsimple.txt'
 
+#TODO: Write some warning like '[?????]' when shutting down by interrupt or
+#      SILENCE file, to make sure it's clear that the previous status is no
+#      longer accurate.
 def main():
 
   parser = argparse.ArgumentParser(
     description=DESCRIPTION, usage=USAGE, epilog=EPILOG)
-  # formatter_class=argparse.RawDescriptionHelpFormatter:
-  #   Preserve formatting in description & epilog
-  # RawTextHelpFormatter: Preserve formatting in argument help too
   parser.set_defaults(**OPT_DEFAULTS)
 
   parser.add_argument('-s', '--server',
@@ -213,8 +213,7 @@ def status_format2(history, history_length):
   for line in history:
     if line[1] == 'up':
       status_str += u' \u2022'
-      # status_str += u'\u25CF'
-      # status_str += u'\u26AB'
+      # status_str += u'\u26AB' # medium bullet
     else:
       status_str += u'o'
   status_str += u' ]'
