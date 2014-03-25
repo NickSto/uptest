@@ -123,7 +123,7 @@ def get_history(history_filepath, history_length):
 def prune_history(history, history_length, frequency, now=None):
   if now is None:
     now = int(time.time())
-  cutoff = now - (frequency * (history_length - 1))
+  cutoff = now - 1 - (frequency * (history_length - 1))
   history[:] = [line for line in history if line[0] >= cutoff]
   return history
 
@@ -215,6 +215,9 @@ def status_format2(history, history_length):
       status_str += u' \u2022'
       # status_str += u'\u26AB' # medium bullet
     else:
+      # add a space to left of a run of o's, for aesthetics
+      if status_str[-1] == u'[' or status_str[-1] == u'\u2022':
+        status_str += u' '
       status_str += u'o'
   status_str += u' ]'
   return status_str
