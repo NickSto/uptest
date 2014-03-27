@@ -1,4 +1,8 @@
 #!/usr/bin/env python
+#TODO: Count sleep time by timestamp diff instead of static time.sleep(freq)
+#TODO: Write some warning like '[?????]' when shutting down by interrupt or
+#      SILENCE file, to make sure it's clear that the previous status is no
+#      longer accurate.
 from __future__ import division
 import re
 import os
@@ -8,7 +12,7 @@ import argparse
 import subprocess
 
 OPT_DEFAULTS = {'server':'google.com', 'data_dir':None, 'history_length':5,
-  'frequency':5}
+  'frequency':5, 'timeout':2}
 USAGE = "%(prog)s [options]"
 DESCRIPTION = """Track and summarize the recent history of connectivity by
 pinging an external server. Can print a textual summary figure to stdout or to
@@ -24,9 +28,6 @@ SILENCE_FILENAME = 'SILENCE'
 HISTORY_FILENAME = 'uphistory.txt'
 STATUS_FILENAME = 'upsimple.txt'
 
-#TODO: Write some warning like '[?????]' when shutting down by interrupt or
-#      SILENCE file, to make sure it's clear that the previous status is no
-#      longer accurate.
 def main():
 
   parser = argparse.ArgumentParser(
@@ -43,6 +44,12 @@ seconds. Default: %(default)s""")
   parser.add_argument('-l', '--history-length', type=int, metavar='LENGTH',
     help="""The number of previous ping tests to take into account when
 calculating the uptime stat. Default: %(default)s""")
+  parser.add_argument('-t', '--timeout', type=int,
+    help="""Seconds to wait for a response to each ping. If greater than 
+"frequency", the value for "frequency" will be used instead. Default:
+%(default)s""")
+  parser.add_argument('-L', '--logfile',
+    help="""Give a file to log ping history to.""")
   parser.add_argument('-d', '--data-dir', metavar='DIRNAME',
     help='The directory where data will be stored. History data will be kept '
       'in DIRNAME/'+HISTORY_FILENAME+' and the status summary will be in '
@@ -50,6 +57,8 @@ calculating the uptime stat. Default: %(default)s""")
       +'" in the user\'s home directory.')
 
   args = parser.parse_args()
+  assert args.timeout <= args.frequency, (
+    'Error: sleep time must be longer than ping timeout.')
 
   # determine file paths
   home_dir = os.path.expanduser('~')
@@ -74,15 +83,20 @@ calculating the uptime stat. Default: %(default)s""")
       fail('Error: history file "'+history_filepath+'" is a non-file.')
     # remove outdated pings
     now = int(time.time())
-    prune_history(history, args.history_length, args.frequency, now=now)
+    prune_history(history, args.history_length - 1, args.frequency, now=now)
 
     # ping and get status
-    result = ping(args.server)
-    if result == 0:
-      status = 'down'
-    else:
+    result = ping(args.server, timeout=args.timeout)
+    if result:
       status = 'up'
+    else:
+      status = 'down'
     history.append((now, status))
+
+    # log result
+    if args.logfile:
+      with open(args.logfile, 'a') as filehandle:
+        filehandle.write("{:.1f}\t{:d}\n".format(result, now))
 
     # write new history back to file
     if os.path.exists(history_filepath) and not os.path.isfile(history_filepath):
@@ -106,7 +120,7 @@ def get_history(history_filepath, history_length):
   """Parse history file, return it in a list of (timestamp, status) tuples.
   "timestamp" is an int and "status" is either "up" or "down". Lines which don't
   conform to "timestamp\tstatus" are skipped. If the file does not exist or is
-  empty, an empty list is returned. The list is in the same order as the Lines
+  empty, an empty list is returned. The list is in the same order as the lines
   in the file.
   """
   history = []
@@ -120,22 +134,25 @@ def get_history(history_filepath, history_length):
   return history
 
 
-def prune_history(history, history_length, frequency, now=None):
+def prune_history(history, past_points, frequency, now=None):
+  """Remove history points older than a cutoff age.
+  The cutoff is calculated to ideally retain "past_points" points, assuming
+  pings have consistently been sent every "frequency" seconds."""
   if now is None:
     now = int(time.time())
-  cutoff = now - 1 - (frequency * (history_length - 1))
+  cutoff = now - (frequency * past_points) - 2 # 2 second fudge factor
   history[:] = [line for line in history if line[0] >= cutoff]
   return history
 
 
-def ping(server):
+def ping(server, timeout=2):
   """Ping "server", and return the ping time in ms.
   If the ping is dropped, returns 0."""
   devnull = open(os.devnull, 'w')
+  command = ['ping', '-n', '-c', '1', '-W', str(timeout), server]
 
   try:
-    output = subprocess.check_output(['ping', '-n', '-c', '1', server],
-      stderr=devnull)
+    output = subprocess.check_output(command, stderr=devnull)
     exit_status = 0
   except subprocess.CalledProcessError as cpe:
     output = cpe.output
@@ -156,8 +173,11 @@ def parse_ms(ping_str):
   for line in ping_str.splitlines():
     match = re.search(ping_pattern, line)
     if match:
-      return float(match.group(1))
-  return None
+      try:
+        return float(match.group(1))
+      except ValueError:
+        return 0
+  return 0
 
 
 def write_history(history_filepath, history):
