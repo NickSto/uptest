@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+#TODO: Try using httplib directly instead of curl
 #TODO: Count sleep time by timestamp diff instead of static time.sleep(freq)
 #TODO: Write some warning like '[?????]' when shutting down by interrupt or
 #      SILENCE file, to make sure it's clear that the previous status is no
@@ -44,6 +45,8 @@ seconds. Default: %(default)s""")
   parser.add_argument('-l', '--history-length', type=int, metavar='LENGTH',
     help="""The number of previous ping tests to take into account when
 calculating the uptime stat. Default: %(default)s""")
+  parser.add_argument('-c', '--curl', action='store_true',
+    help="""Use curl instead of ping as the connection test.""")
   parser.add_argument('-t', '--timeout', type=int,
     help="""Seconds to wait for a response to each ping. If greater than 
 "frequency", the value for "frequency" will be used instead. Default:
@@ -86,7 +89,10 @@ calculating the uptime stat. Default: %(default)s""")
     prune_history(history, args.history_length - 1, args.frequency, now=now)
 
     # ping and get status
-    result = ping(args.server, timeout=args.timeout)
+    if args.curl:
+      result = curl(args.server, timeout=args.timeout)
+    else:
+      result = ping(args.server, timeout=args.timeout)
     if result:
       status = 'up'
     else:
@@ -167,6 +173,36 @@ def ping(server, timeout=2):
     return 0
 
 
+def curl(server, timeout=2):
+  """Use curl to "ping" the given server, and return the latency in milliseconds.
+  The time is the "time_connect" variable of curl's "-w" option (multiplied by
+  1000 to get ms). In practice the time is very similar to a simple ping.
+  If the http request fails, returns 0."""
+  devnull = open(os.devnull, 'w')
+  command = ['curl', '-s', '--output', '/dev/null/', '--write-out',
+    r'%{time_connect}\n', '--connect-timeout', str(timeout), server]
+
+  try:
+    output = subprocess.check_output(command, stderr=devnull)
+    exit_status = 0
+  except subprocess.CalledProcessError as cpe:
+    output = cpe.output
+    exit_status = cpe.returncode
+  except OSError:
+    output = ''
+    exit_status = 1
+
+  #TODO: resolve why it's returning 23
+  if exit_status == 0 or exit_status == 23:
+    try:
+      return 1000*float(output.strip())
+    except ValueError:
+      return 0.0
+  else:
+    return 0.0
+
+
+
 def parse_ms(ping_str):
   """Parse out the ms of the ping from the output of `ping -n -c 1`"""
   ping_pattern = r' bytes from .* time=([\d.]+) ?ms'
@@ -176,8 +212,8 @@ def parse_ms(ping_str):
       try:
         return float(match.group(1))
       except ValueError:
-        return 0
-  return 0
+        return 0.0
+  return 0.0
 
 
 def write_history(history_filepath, history):
