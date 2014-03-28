@@ -67,6 +67,10 @@ calculating the uptime stat. Default: %(default)s""")
   assert args.timeout <= args.frequency, (
     'Error: sleep time must be longer than ping timeout.'
   )
+  if args.curl:
+    ping_method = 'curl'
+  else:
+    ping_method = 'ping'
 
   # determine file paths
   home_dir = os.path.expanduser('~')
@@ -109,10 +113,7 @@ calculating the uptime stat. Default: %(default)s""")
     prune_history(history, args.history_length - 1, args.frequency, now=now)
 
     # ping and get status
-    if args.curl:
-      result = curl(args.server, timeout=args.timeout)
-    else:
-      result = ping(args.server, timeout=args.timeout)
+    result = ping(args.server, method=ping_method, timeout=args.timeout)
     if result:
       status = 'up'
     else:
@@ -122,7 +123,10 @@ calculating the uptime stat. Default: %(default)s""")
     # log result
     if args.logfile:
       with open(args.logfile, 'a') as filehandle:
-        filehandle.write("{:.1f}\t{:d}\n".format(result, now))
+        if result == 0 or result >= 100:
+          filehandle.write("{:d}\t{:d}\n".format(int(result), now))
+        else:
+          filehandle.write("{:.1f}\t{:d}\n".format(result, now))
 
     # write new history back to file
     if os.path.exists(history_filepath) and not os.path.isfile(history_filepath):
@@ -171,11 +175,19 @@ def prune_history(history, past_points, frequency, now=None):
   return history
 
 
-def ping(server, timeout=2):
-  """Ping "server", and return the ping time in ms.
-  If the ping is dropped, returns 0."""
+def ping(server, method='ping', timeout=2):
+  """Ping "server", and return the ping time in milliseconds.
+  If the ping fails, returns 0.
+  If the method is "curl", the returned time is the "time_connect" variable of
+  curl's "-w" option (multiplied by 1000 to get ms). In practice the time is
+  very similar to a simple ping."""
   devnull = open(os.devnull, 'w')
-  command = ['ping', '-n', '-c', '1', '-W', str(timeout), server]
+  assert method in ['ping', 'curl'], 'Error: Invalid ping method'
+  if method == 'ping':
+    command = ['ping', '-n', '-c', '1', '-W', str(timeout), server]
+  elif method == 'curl':
+    command = ['curl', '-s', '--output', '/dev/null', '--write-out',
+      r'%{time_connect}', '--connect-timeout', str(timeout), server]
 
   try:
     output = subprocess.check_output(command, stderr=devnull)
@@ -188,42 +200,15 @@ def ping(server, timeout=2):
     exit_status = 1
 
   if exit_status == 0:
-    return parse_ms(output)
-  else:
-    return 0
-
-
-def curl(server, timeout=2):
-  """Use curl to "ping" the given server, and return the latency in milliseconds.
-  The time is the "time_connect" variable of curl's "-w" option (multiplied by
-  1000 to get ms). In practice the time is very similar to a simple ping.
-  If the http request fails, returns 0."""
-  devnull = open(os.devnull, 'w')
-  command = ['curl', '-s', '--output', '/dev/null/', '--write-out',
-    r'%{time_connect}\n', '--connect-timeout', str(timeout), server]
-
-  try:
-    output = subprocess.check_output(command, stderr=devnull)
-    exit_status = 0
-  except subprocess.CalledProcessError as cpe:
-    output = cpe.output
-    exit_status = cpe.returncode
-  except OSError:
-    output = ''
-    exit_status = 1
-
-  #TODO: resolve why it's returning 23
-  if exit_status == 0 or exit_status == 23:
-    try:
-      return 1000*float(output.strip())
-    except ValueError:
-      return 0.0
+    if method == 'ping':
+      return parse_ping(output)
+    elif method == 'curl':
+      return parse_curl(output)
   else:
     return 0.0
 
 
-
-def parse_ms(ping_str):
+def parse_ping(ping_str):
   """Parse out the ms of the ping from the output of `ping -n -c 1`"""
   ping_pattern = r' bytes from .* time=([\d.]+) ?ms'
   for line in ping_str.splitlines():
@@ -234,6 +219,13 @@ def parse_ms(ping_str):
       except ValueError:
         return 0.0
   return 0.0
+
+
+def parse_curl(curl_str):
+  try:
+    return 1000*float(curl_str)
+  except ValueError:
+    return 0.0
 
 
 def write_history(history_filepath, history):
