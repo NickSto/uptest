@@ -1,5 +1,12 @@
 #!/usr/bin/python
 """
+Next step:
+Change the items in the "pings" list from processes to tuples holding the final
+outputs as well as the processes and queues, so I can iterate through it in the
+main body instead of being afraid of touching it directly. Each time, I'll have
+a method loop through it, checking if processes are done, and saving the results.
+See update_status() for the WIP.
+
 Reorganization:
 Right now the model is detached from individual pings. Every 5 seconds it wakes
 up, checks the recent pings, and updates the status of whether it's up or down,
@@ -46,6 +53,7 @@ ping exit statuses
   zero:
     - localhost (100% response)
 """
+import re
 import os
 import sys
 import time
@@ -72,10 +80,10 @@ it's the correct one.
 All options are optional."""
 EPILOG=""""""
 
-DOWN_TEXT  = "***********DOWN***********"
-UP_TEXT    = "Connected!                "
-NO_TEXT    = "no information yet        "
-DATEFORMAT = '%Y-%m-%d %I:%M:%S %p'
+DOWN_TEXT    = "***********DOWN***********"
+UP_TEXT      = "Connected!                "
+NO_TEXT      = "no information yet        "
+DATEFORMAT   = '%Y-%m-%d %I:%M:%S %p'
 
 
 debug = False
@@ -147,11 +155,11 @@ def main():
     status = get_status(pings)
 
     if status is not None and status[1] > last_time:
-      if status[0] == 0:
+      if status[1] == 0:
         up = True
       else:
         up = False
-      last_time = status[1]
+      last_time = status[2]
     date = datetime.datetime.fromtimestamp(float(last_time))
 
     sys.stdout.write("\n")
@@ -174,14 +182,18 @@ def main():
 
 
 def ping(queue, server):
-
+  """Ping "server", and add result to "queue".
+  The result is (ms, exit_status, timestamp), where
+  "ms" is the milliseconds the ping too, or None if it failed.
+  "exit_status" is the ping's exit code
+  "timestamp" is the time the ping was sent."""
   devnull = open(os.devnull, 'w')
 
   timestamp = int(time.time())
   if debug: print "Starting ping: "+str(timestamp)
   try:
-    output = subprocess.call(['ping', '-n', '-c', '1', server],
-      stdout=devnull, stderr=devnull)
+    output = subprocess.check_output(['ping', '-n', '-c', '1', server],
+      stderr=devnull)
     exit_status = 0
   except subprocess.CalledProcessError as cpe:
     output = cpe.output
@@ -190,21 +202,24 @@ def ping(queue, server):
     output = ''
     exit_status = 1
 
-  queue.put([exit_status, timestamp])
+  ms = parse_ms(output)
+  queue.put([ms, exit_status, timestamp])
 
 
 def get_status(pings):
   """Return values:
-  (exitcode, timestamp) if it finds a finished ping,
+  (ms, exitcode, timestamp) if it finds a finished ping,
   None if not."""
 
   latest = -1
   result = None
   for i in reversed(range(len(pings))):
-    process = pings[i][0]
-    queue = pings[i][1]
+    (process, queue) = pings[i]
     if not process.is_alive():
-      result = get_queue(queue)
+      # Kludge for Queue being broken. Calling .get() on an empty Queue hangs,
+      # so adding None means an empty Queue will just return that None.
+      queue.put(None)
+      result = queue.get()
       if result is not None:
         latest = i
         break
@@ -219,19 +234,26 @@ def get_status(pings):
   return result
 
 
-def get_queue(queue):
-  """Because Queue.get() is apparently broken. Alternative retrieval idiom taken
-  from: http://stackoverflow.com/a/1541117/726773
-  Returns first item in Queue or None, if it was empty. NOTE: no items in the
-  Queue can be None."""
-  items = []
-  queue.put(None) # sentinel for end of Queue
-  for item in iter(queue.get, None):
-    items.append(item)
-  if len(items) > 0:
-    return items[0]
-  else:
-    return None
+def update_status(pings):
+
+  for (result, process, queue) in pings:
+    if result is None:
+      if not process.is_alive():
+        # Kludge for Queue being broken. Calling .get() on an empty Queue hangs,
+        # so adding None means an empty Queue will just return that None.
+        queue.put(None)
+        result = queue.get()
+
+
+
+def parse_ms(ping_str):
+  """Parse out the ms of the ping from the output of `ping -n -c 1`"""
+  ping_pattern = r' bytes from .* time=([\d.]+) ?ms'
+  for line in ping_str.splitlines():
+    match = re.search(ping_pattern, line)
+    if match:
+      return float(match.group(1))
+  return None
 
 
 def write_log(log_file, up):
