@@ -12,6 +12,7 @@ import re
 import os
 import sys
 import time
+import signal
 import argparse
 import subprocess
 
@@ -64,7 +65,8 @@ calculating the uptime stat. Default: %(default)s""")
 
   args = parser.parse_args()
   assert args.timeout <= args.frequency, (
-    'Error: sleep time must be longer than ping timeout.')
+    'Error: sleep time must be longer than ping timeout.'
+  )
 
   # determine file paths
   home_dir = os.path.expanduser('~')
@@ -76,10 +78,23 @@ calculating the uptime stat. Default: %(default)s""")
   history_filepath = os.path.join(data_dirpath, HISTORY_FILENAME)
   status_filepath = os.path.join(data_dirpath, STATUS_FILENAME)
 
+  # attach signal handler to write special status on shutdown
+  def invalidate_status():
+    with open(status_filepath, 'w') as filehandle:
+      filehandle.write('[OFFLINE]')
+  def invalidate_and_exit(*args):
+    invalidate_status()
+    sys.exit()
+  for signame in ['SIGINT', 'SIGHUP', 'SIGTERM', 'SIGQUIT']:
+    sig = getattr(signal, signame)
+    signal.signal(sig, invalidate_and_exit)
+
+  # main loop
   now = int(time.time())
   target = now + args.frequency
   while True:
     if os.path.isfile(silence_file):
+      invalidate_status()
       target = sleep(target, args.frequency)
       continue
 
@@ -287,10 +302,18 @@ def status_format2(history, history_length):
 def sleep(target, delay=5, precision=0.1):
   """Sleep until "target" (unix timestamp), and return a new target "delay"
   seconds later. It does this by sleeping in increments of "precision" seconds.
+  To accommodate system suspend and other pauses in execution, if the current
+  time is more than one step (increment of "delay") beyond "target", then the
+  target will be raised by a multiple of delay until it's one step below the
+  current time.
   """
   if precision <= 0:
     raise ValueError('Sleep precision must be greater than zero.')
   now = int(time.time())
+  # If now already past the target, increase target in multiples of delay until
+  # it's just under now.
+  if now > target:
+    target += delay * ((now - target) // delay)
   while now < target:
     time.sleep(precision)
     now = int(time.time())
