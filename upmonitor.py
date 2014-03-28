@@ -1,9 +1,12 @@
 #!/usr/bin/env python
-#TODO: Try using httplib directly instead of curl
-#TODO: Count sleep time by timestamp diff instead of static time.sleep(freq)
 #TODO: Write some warning like '[?????]' when shutting down by interrupt or
 #      SILENCE file, to make sure it's clear that the previous status is no
 #      longer accurate.
+#TODO: Maybe an algorithm to automatically switch to curl if there's a streak of
+#      failed pings (so no manual intervention is needed)
+#TODO: Try using httplib directly instead of curl
+#TODO: Read in settings from a config file every loop, so they can be changed
+#      without an awkward "kill" and background process re-launch.
 from __future__ import division
 import re
 import os
@@ -73,9 +76,11 @@ calculating the uptime stat. Default: %(default)s""")
   history_filepath = os.path.join(data_dirpath, HISTORY_FILENAME)
   status_filepath = os.path.join(data_dirpath, STATUS_FILENAME)
 
+  now = int(time.time())
+  target = now + args.frequency
   while True:
     if os.path.isfile(silence_file):
-      time.sleep(args.frequency)
+      target = sleep(target, args.frequency)
       continue
 
     # read in history from file
@@ -119,7 +124,7 @@ calculating the uptime stat. Default: %(default)s""")
       with open(status_filepath, 'w') as filehandle:
         filehandle.write(status_str.encode('utf8'))
 
-    time.sleep(args.frequency)
+    target = sleep(target, args.frequency)
 
 
 def get_history(history_filepath, history_length):
@@ -277,6 +282,19 @@ def status_format2(history, history_length):
       status_str += u'o'
   status_str += u' ]'
   return status_str
+
+
+def sleep(target, delay=5, precision=0.1):
+  """Sleep until "target" (unix timestamp), and return a new target "delay"
+  seconds later. It does this by sleeping in increments of "precision" seconds.
+  """
+  if precision <= 0:
+    raise ValueError('Sleep precision must be greater than zero.')
+  now = int(time.time())
+  while now < target:
+    time.sleep(precision)
+    now = int(time.time())
+  return target + delay
 
 
 def fail(message):
