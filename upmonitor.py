@@ -15,9 +15,10 @@ import time
 import signal
 import argparse
 import subprocess
+import ConfigParser
 
-OPT_DEFAULTS = {'server':'google.com', 'data_dir':None, 'history_length':5,
-  'frequency':5, 'timeout':2}
+OPT_DEFAULTS = {'server':'google.com', 'history_length':5, 'frequency':5,
+  'timeout':2}
 USAGE = "%(prog)s [options]"
 DESCRIPTION = """Track and summarize the recent history of connectivity by
 pinging an external server. Can print a textual summary figure to stdout or to
@@ -32,6 +33,7 @@ DATA_DIRNAME = '.nbsstate'
 SILENCE_FILENAME = 'SILENCE'
 HISTORY_FILENAME = 'uphistory.txt'
 STATUS_FILENAME = 'upsimple.txt'
+CONFIG_FILENAME = 'upmonitor.cfg'
 
 def main():
 
@@ -59,9 +61,10 @@ calculating the uptime stat. Default: %(default)s""")
     help="""Give a file to log ping history to.""")
   parser.add_argument('-d', '--data-dir', metavar='DIRNAME',
     help='The directory where data will be stored. History data will be kept '
-      'in DIRNAME/'+HISTORY_FILENAME+' and the status summary will be in '
-      'DIRNAME/'+STATUS_FILENAME+'. Default: a directory named "'+DATA_DIRNAME
-      +'" in the user\'s home directory.')
+      'in DIRNAME/'+HISTORY_FILENAME+', the status summary will be in '
+      'DIRNAME/'+STATUS_FILENAME+', and configuration settings will be written '
+      'to DIRNAME/'+CONFIG_FILENAME+'. Default: a directory named '+DATA_DIRNAME
+      +' in the user\'s home directory.')
 
   args = parser.parse_args()
   assert args.timeout <= args.frequency, (
@@ -81,6 +84,10 @@ calculating the uptime stat. Default: %(default)s""")
     data_dirpath = os.path.join(home_dir, DATA_DIRNAME)
   history_filepath = os.path.join(data_dirpath, HISTORY_FILENAME)
   status_filepath = os.path.join(data_dirpath, STATUS_FILENAME)
+  config_filepath = os.path.join(data_dirpath, CONFIG_FILENAME)
+
+  # write settings to config file
+  write_config(config_filepath, args)
 
   # attach signal handler to write special status on shutdown
   def invalidate_status():
@@ -146,6 +153,17 @@ calculating the uptime stat. Default: %(default)s""")
     target = sleep(target, args.frequency)
 
 
+def write_config(config_filepath, args):
+  config = ConfigParser.RawConfigParser()
+  config.add_section('ProcessSettings')
+  if args.logfile:
+    config.set('ProcessSettings', 'logfile', args.logfile)
+  config.set('ProcessSettings', 'frequency', args.frequency)
+  config.set('ProcessSettings', 'timeout', args.timeout)
+  with open(config_filepath, 'wb') as configfile:
+    config.write(configfile)
+
+
 def get_history(history_filepath, history_length):
   """Parse history file, return it in a list of (timestamp, status) tuples.
   "timestamp" is an int and "status" is either "up" or "down". Lines which don't
@@ -188,7 +206,7 @@ def ping(server, method='ping', timeout=2):
   elif method == 'curl':
     command = ['curl', '-s', '--output', '/dev/null', '--write-out',
       r'%{time_connect}', '--connect-timeout', str(timeout), server]
-
+  # call command
   try:
     output = subprocess.check_output(command, stderr=devnull)
     exit_status = 0
@@ -198,7 +216,7 @@ def ping(server, method='ping', timeout=2):
   except OSError:
     output = ''
     exit_status = 1
-
+  # parse output or return 0 on error
   if exit_status == 0:
     if method == 'ping':
       return parse_ping(output)
