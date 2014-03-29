@@ -42,7 +42,11 @@ def main():
   else:
     config = ConfigParser.RawConfigParser()
     config.read(config_filepath)
-    log_filepath = config.get('ProcessSettings', 'logfile')
+    try:
+      log_filepath = config.get('ProcessSettings', 'logfile')
+    except ConfigParser.NoOptionError:
+      fail('Error: Cannot find a log file. Are you sure upmonitor.py is '
+        'writing one?')
 
   log_tail = tail.Tail(log_filepath)
   log_tail.register_callback(callback)
