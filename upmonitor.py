@@ -1,16 +1,12 @@
 #!/usr/bin/env python
-#TODO: Write some warning like '[?????]' when shutting down by interrupt or
-#      SILENCE file, to make sure it's clear that the previous status is no
-#      longer accurate.
 #TODO: Maybe an algorithm to automatically switch to curl if there's a streak of
 #      failed pings (so no manual intervention is needed)
 #TODO: Try using httplib directly instead of curl
-#TODO: Read in settings from a config file every loop, so they can be changed
-#      without an awkward "kill" and background process re-launch.
 from __future__ import division
 import re
 import os
 import sys
+import copy
 import time
 import signal
 import argparse
@@ -18,8 +14,19 @@ import subprocess
 import ConfigParser
 import distutils.spawn
 
+def tobool(bool_str):
+  if bool_str == 'True':
+    return True
+  elif bool_str == 'False':
+    return False
+  else:
+    raise ValueError('invalid boolean literal: '+bool_str)
+
 OPT_DEFAULTS = {'server':'google.com', 'history_length':5, 'frequency':5,
-  'timeout':2}
+  'timeout':2, 'method':'ping'}
+OPT_TYPES = {'server':str, 'history_length':int, 'frequency':int, 'timeout':int,
+  'method':str, 'stdout':tobool, 'logfile':os.path.abspath,
+  'data_dir':os.path.abspath}
 USAGE = "%(prog)s [options]"
 DESCRIPTION = """Track and summarize the recent history of connectivity by
 pinging an external server. Can print a textual summary figure to stdout or to
@@ -46,21 +53,24 @@ def main():
     help="""The server to ping. Default: %(default)s""")
   parser.add_argument('-o', '--stdout', action='store_true',
     help="""Print status summary to stdout instead of a file.""")
-  parser.add_argument('-f', '--frequency', type=int,
+  parser.add_argument('-f', '--frequency', type=OPT_TYPES['frequency'],
     help="""How frequently to test the connection. Give the interval time in
 seconds. Default: %(default)s""")
-  parser.add_argument('-l', '--history-length', type=int, metavar='LENGTH',
+  parser.add_argument('-l', '--history-length', metavar='LENGTH',
+    type=OPT_TYPES['history_length'],
     help="""The number of previous ping tests to take into account when
 calculating the uptime stat. Default: %(default)s""")
-  parser.add_argument('-c', '--curl', action='store_true',
+  parser.add_argument('-c', '--curl', dest='method', action='store_const',
+    const='curl',
     help="""Use curl instead of ping as the connection test.""")
-  parser.add_argument('-t', '--timeout', type=int,
+  parser.add_argument('-t', '--timeout', type=OPT_TYPES['timeout'],
     help="""Seconds to wait for a response to each ping. If greater than 
 "frequency", the value for "frequency" will be used instead. Default:
 %(default)s""")
-  parser.add_argument('-L', '--logfile',
+  parser.add_argument('-L', '--logfile', type=OPT_TYPES['logfile'],
     help="""Give a file to log ping history to.""")
   parser.add_argument('-d', '--data-dir', metavar='DIRNAME',
+    type=OPT_TYPES['data_dir'],
     help='The directory where data will be stored. History data will be kept '
       'in DIRNAME/'+HISTORY_FILENAME+', the status summary will be in '
       'DIRNAME/'+STATUS_FILENAME+', and configuration settings will be written '
@@ -68,31 +78,21 @@ calculating the uptime stat. Default: %(default)s""")
       +' in the user\'s home directory.')
 
   args = parser.parse_args()
-  assert args.timeout <= args.frequency, (
-    'Error: sleep time must be longer than ping timeout.'
-  )
-  if args.curl:
-    ping_method = 'curl'
-  else:
-    ping_method = 'ping'
+  check_config(args)
 
   # determine file paths
   home_dir = os.path.expanduser('~')
   silence_file = os.path.join(home_dir, DATA_DIRNAME, SILENCE_FILENAME)
-  if args.data_dir:
-    data_dirpath = args.data_dir
-  else:
-    data_dirpath = os.path.join(home_dir, DATA_DIRNAME)
-  history_filepath = os.path.join(data_dirpath, HISTORY_FILENAME)
-  status_filepath = os.path.join(data_dirpath, STATUS_FILENAME)
-  config_filepath = os.path.join(data_dirpath, CONFIG_FILENAME)
+  (history_file, status_file, config_file) = make_paths(args.data_dir)
 
   # write settings to config file
-  write_config(config_filepath, args)
+  write_config(config_file, args)
+  args.die = False
 
   # attach signal handler to write special status on shutdown
+  global invalidate_status
   def invalidate_status():
-    with open(status_filepath, 'w') as filehandle:
+    with open(status_file, 'w') as filehandle:
       filehandle.write('[OFFLINE]')
   def invalidate_and_exit(*args):
     invalidate_status()
@@ -110,18 +110,25 @@ calculating the uptime stat. Default: %(default)s""")
       target = sleep(target, args.frequency)
       continue
 
+    # read in config file and update args with new settings
+    old_args = copy.deepcopy(args)
+    read_config(config_file, args)
+    check_config(args, old_args)
+    if args.die:
+      invalidate_and_exit()
+
     # read in history from file
     history = []
-    if os.path.isfile(history_filepath):
-      history = get_history(history_filepath, args.history_length)
-    elif os.path.exists(history_filepath):
-      fail('Error: history file "'+history_filepath+'" is a non-file.')
+    if os.path.isfile(history_file):
+      history = get_history(history_file, args.history_length)
+    elif os.path.exists(history_file):
+      fail('Error: history file "'+history_file+'" is a non-file.')
     # remove outdated pings
     now = int(time.time())
     prune_history(history, args.history_length - 1, args.frequency, now=now)
 
     # ping and get status
-    result = ping(args.server, method=ping_method, timeout=args.timeout)
+    result = ping(args.server, method=args.method, timeout=args.timeout)
     if result:
       status = 'up'
     else:
@@ -133,35 +140,99 @@ calculating the uptime stat. Default: %(default)s""")
       log(args.logfile, result, now)
 
     # write new history back to file
-    if os.path.exists(history_filepath) and not os.path.isfile(history_filepath):
-      fail('Error: history file "'+history_filepath+'" is a non-file.')
-    write_history(history_filepath, history)
+    if os.path.exists(history_file) and not os.path.isfile(history_file):
+      fail('Error: history file "'+history_file+'" is a non-file.')
+    write_history(history_file, history)
 
     # write status stat to file (or stdout)
-    if os.path.exists(status_filepath) and not os.path.isfile(status_filepath):
-      fail('Error: status file "'+status_filepath+'" is a non-file.')
+    if os.path.exists(status_file) and not os.path.isfile(status_file):
+      fail('Error: status file "'+status_file+'" is a non-file.')
     status_str = status_format2(history, args.history_length)
     if args.stdout:
       print status_str
     else:
-      with open(status_filepath, 'w') as filehandle:
+      with open(status_file, 'w') as filehandle:
         filehandle.write(status_str.encode('utf8'))
 
     target = sleep(target, args.frequency)
 
 
-def write_config(config_filepath, args):
+def make_paths(data_dir):
+  """Give args.data_dir as argument."""
+  home_dir = os.path.expanduser('~')
+  if not data_dir:
+    data_dir = os.path.join(home_dir, DATA_DIRNAME)
+  history_file = os.path.join(data_dir, HISTORY_FILENAME)
+  status_file = os.path.join(data_dir, STATUS_FILENAME)
+  config_file = os.path.join(data_dir, CONFIG_FILENAME)
+  return (history_file, status_file, config_file)
+
+
+def write_config(config_file, args):
+  """Write settings (including argparse args) to the config file."""
   config = ConfigParser.RawConfigParser()
-  config.add_section('ProcessSettings')
-  if args.logfile:
-    config.set('ProcessSettings', 'logfile', args.logfile)
-  config.set('ProcessSettings', 'frequency', args.frequency)
-  config.set('ProcessSettings', 'timeout', args.timeout)
-  with open(config_filepath, 'wb') as configfile:
-    config.write(configfile)
+  config.add_section('args')
+  for arg in vars(args):
+    value = getattr(args, arg)
+    if value is not None:
+      config.set('args', arg, getattr(args, arg))
+  config.add_section('meta')
+  config.set('meta', 'pid', os.getpid())
+  with open(config_file, 'wb') as filehandle:
+    config.write(filehandle)
 
 
-def get_history(history_filepath, history_length):
+def read_config(config_file, args):
+  """Read all arguments from config file and update args attributes with them.
+  If the [meta] "die" option is present, set args.die to True.
+  If there is any error reading the file, change nothing and return."""
+  config = ConfigParser.RawConfigParser()
+  try:
+    config.read(config_file)
+    for arg in config.options('args'):
+      # if the option exists, cast it to the proper type and set as args attr
+      if config.has_option('args', arg):
+        cast = OPT_TYPES[arg]
+        try:
+          setattr(args, arg, cast(config.get('args', arg)))
+        except ValueError:
+          pass
+    # die?
+    if config.has_option('meta', 'die'):
+      args.die = True
+  except ConfigParser.Error:
+    return
+
+
+def check_config(args, old_args=None):
+  """Check certain arguments for validity.
+  If old_args is not given, an AssertionError will be raised on invalid
+  arguments. If old_args is given, invalid arguments will be replaced with their
+  previous values. This is to be used when the process cannot be interrupted."""
+  if args.timeout > args.frequency:
+    if old_args is None:
+      raise AssertionError('Sleep time must be longer than ping timeout.')
+    else:
+      args.timeout = old_args.timeout
+      args.frequency = old_args.frequency
+  if args.method not in ['ping', 'curl']:
+    if old_args is None:
+      raise AssertionError('Ping method must be one of "ping" or "curl".')
+    else:
+      args.method = old_args.method
+  if args.data_dir and not os.path.isdir(args.data_dir):
+    if old_args is None:
+      raise AssertionError('Given data directory does not exist.')
+    else:
+      args.data_dir = old_args.data_dir
+  if args.logfile and not os.path.exists(os.path.dirname(args.logfile)):
+    if old_args is None:
+      raise AssertionError('Given log file is an invalid pathname.')
+    else:
+      args.logfile = old_args.logfile
+
+
+def get_history(history_file, history_length):
   """Parse history file, return it in a list of (timestamp, status) tuples.
   "timestamp" is an int and "status" is either "up" or "down". Lines which don't
   conform to "timestamp\tstatus" are skipped. If the file does not exist or is
@@ -169,7 +240,7 @@ def get_history(history_filepath, history_length):
   in the file.
   """
   history = []
-  with open(history_filepath, 'rU') as file_handle:
+  with open(history_file, 'rU') as file_handle:
     for line in file_handle:
       fields = line.strip().split('\t')
       try:
@@ -245,8 +316,8 @@ def parse_curl(curl_str):
     return 0.0
 
 
-def write_history(history_filepath, history):
-  with open(history_filepath, 'w') as filehandle:
+def write_history(history_file, history):
+  with open(history_file, 'w') as filehandle:
     for line in history:
       filehandle.write("{}\t{}\n".format(line[0], line[1]))
 
@@ -320,9 +391,9 @@ def calc_up_stat2(history, history_length):
   return up_sum/total
 
 
-def write_status(status_filepath, history, history_length):
+def write_status(status_file, history, history_length):
   status_str = status_format2(history, history_length)
-  with open(status_filepath, 'w') as filehandle:
+  with open(status_file, 'w') as filehandle:
     filehandle.write(status_str.encode('utf8'))
 
 
@@ -380,4 +451,8 @@ def fail(message):
   sys.exit(1)
 
 if __name__ == '__main__':
-  main()
+  try:
+    main()
+  except Exception:
+    invalidate_status()
+    raise
