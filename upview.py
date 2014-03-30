@@ -50,8 +50,9 @@ def main():
 
   log_tail = tail.Tail(log_filepath)
   log_tail.register_callback(callback)
+  log_tail.register_wait_func(wait_func)
   try:
-    log_tail.follow(s=0.3)
+    log_tail.follow(s=1)
   except KeyboardInterrupt:
     print
 
@@ -60,7 +61,7 @@ def callback(line):
   line = line.strip()
   fields = line.split('\t')
   msg_width = len(DROPPED_MSG)
-  format_str = "\n{:<"+str(msg_width)+"s} {}"
+  format_str = "\n{:<"+str(msg_width)+"s} {}\t"
   if len(fields) >= 2:
     try:
       ms = float(fields[0])
@@ -76,6 +77,11 @@ def callback(line):
       sys.stdout.write(format_str.format(str(int(ms))+' ms', timestr))
   else:
     fail('Error: unsupported log format.')
+  sys.stdout.flush()
+
+
+def wait_func():
+  sys.stdout.write('*')
   sys.stdout.flush()
 
 
