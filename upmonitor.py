@@ -40,7 +40,7 @@ EPILOG = """"""
 DATA_DIRNAME = '.nbsstate'
 SILENCE_FILENAME = 'SILENCE'
 HISTORY_FILENAME = 'uphistory.txt'
-STATUS_FILENAME = 'upsimple.txt'
+STATUS_FILENAME = 'upstatus.txt'
 CONFIG_FILENAME = 'upmonitor.cfg'
 
 def main():
