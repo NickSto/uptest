@@ -7,24 +7,26 @@ import argparse
 import datetime
 import ConfigParser
 
-OPT_DEFAULTS = {}
-USAGE = "%(prog)s [options]"
-DESCRIPTION = """Watch a running log of pings being written by upmonitor.py."""
-EPILOG = """"""
-
 DATA_DIRNAME = '.nbsstate'
 CONFIG_FILENAME = 'upmonitor.cfg'
 DROPPED_MSG = '*****DROPPED*****'
 
+OPT_DEFAULTS = {}
+USAGE = "%(prog)s [options]"
+DESCRIPTION = """Watch a running log of pings being written by upmonitor.py.
+By default, this will watch the log file specified in the configuration file
+"~/"""+DATA_DIRNAME+'/'+CONFIG_FILENAME+'".'
+EPILOG = """"""
+
 def main():
 
   parser = argparse.ArgumentParser(
-    description=DESCRIPTION, usage=USAGE, epilog=EPILOG)
+    description=DESCRIPTION, epilog=EPILOG)
   parser.set_defaults(**OPT_DEFAULTS)
 
   parser.add_argument('log', metavar='logfile', nargs='?',
-    help="""The log file. Default: %(default)s""")
-  parser.add_argument('-c', '--config', metavar='configfile.cfg',
+    help="""The log file to watch instead of the default.""")
+  parser.add_argument('-c', '--config', metavar='configfile',
     help='The file containing settings info for the upmonitor process, '
       'including where to find the log file. Default: ~/'+DATA_DIRNAME+'/'
       +CONFIG_FILENAME)

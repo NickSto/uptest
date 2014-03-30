@@ -31,10 +31,12 @@ USAGE = "%(prog)s [options]"
 DESCRIPTION = """Track and summarize the recent history of connectivity by
 pinging an external server. Can print a textual summary figure to stdout or to
 a file, which can be read and displayed by utilities like indicator-sysmonitor.
-This allows visual monitoring of real, current connectivity. The current output
+This allows visual monitoring of real, current connectivity. The status display
 looks something like "[*oo**]", showing the results of the most recent five
-pings (most recent on the right). *'s indicate successful pings and o's are
-dropped pings."""
+pings (newest on the right). *'s indicate successful pings and o's are dropped
+pings. All command-line options can be changed without interrupting the running
+process by editing upmonitor.cfg. Any invalid settings will be ignored, however.
+"""
 EPILOG = """"""
 
 DATA_DIRNAME = '.nbsstate'
@@ -46,7 +48,7 @@ CONFIG_FILENAME = 'upmonitor.cfg'
 def main():
 
   parser = argparse.ArgumentParser(
-    description=DESCRIPTION, usage=USAGE, epilog=EPILOG)
+    description=DESCRIPTION, epilog=EPILOG)
   parser.set_defaults(**OPT_DEFAULTS)
 
   parser.add_argument('-s', '--server',
@@ -58,17 +60,18 @@ def main():
 seconds. Default: %(default)s""")
   parser.add_argument('-l', '--history-length', metavar='LENGTH',
     type=OPT_TYPES['history_length'],
-    help="""The number of previous ping tests to take into account when
-calculating the uptime stat. Default: %(default)s""")
+    help="""The number of previous ping tests to keep track of and display.
+Default: %(default)s""")
   parser.add_argument('-c', '--curl', dest='method', action='store_const',
     const='curl',
     help="""Use curl instead of ping as the connection test.""")
   parser.add_argument('-t', '--timeout', type=OPT_TYPES['timeout'],
-    help="""Seconds to wait for a response to each ping. If greater than 
-"frequency", the value for "frequency" will be used instead. Default:
-%(default)s""")
+    help="""Seconds to wait for a response to each ping. Cannot be greater than 
+"frequency". Default: %(default)s""")
   parser.add_argument('-L', '--logfile', type=OPT_TYPES['logfile'],
-    help="""Give a file to log ping history to.""")
+    help="""Give a file to log ping history to. Will record the ping latency,
+the time, and if possilbe, the wifi SSID and MAC address (using the "iwconfig"
+command). This file can be tracked in real-time with upview.py.""")
   parser.add_argument('-d', '--data-dir', metavar='DIRNAME',
     type=OPT_TYPES['data_dir'],
     help='The directory where data will be stored. History data will be kept '
