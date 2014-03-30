@@ -16,6 +16,7 @@ import signal
 import argparse
 import subprocess
 import ConfigParser
+import distutils.spawn
 
 OPT_DEFAULTS = {'server':'google.com', 'history_length':5, 'frequency':5,
   'timeout':2}
@@ -129,11 +130,7 @@ calculating the uptime stat. Default: %(default)s""")
 
     # log result
     if args.logfile:
-      with open(args.logfile, 'a') as filehandle:
-        if result == 0 or result >= 100:
-          filehandle.write("{:d}\t{:d}\n".format(int(result), now))
-        else:
-          filehandle.write("{:.1f}\t{:d}\n".format(result, now))
+      log(args.logfile, result, now)
 
     # write new history back to file
     if os.path.exists(history_filepath) and not os.path.isfile(history_filepath):
@@ -216,6 +213,8 @@ def ping(server, method='ping', timeout=2):
   except OSError:
     output = ''
     exit_status = 1
+  finally:
+    devnull.close()
   # parse output or return 0 on error
   if exit_status == 0:
     if method == 'ping':
@@ -250,6 +249,52 @@ def write_history(history_filepath, history):
   with open(history_filepath, 'w') as filehandle:
     for line in history:
       filehandle.write("{}\t{}\n".format(line[0], line[1]))
+
+
+def get_wifi_info():
+  """Find out what the wifi SSID and MAC address are.
+  Returns those two values as strings. If you are not connected to wifi or an
+  error occurs, returns two None's."""
+  ssid = None
+  mac = None
+  # check if iwconfig command is available
+  if not distutils.spawn.find_executable('iwconfig'):
+    return (ssid, mac)
+  # call iwconfig
+  devnull = open(os.devnull, 'w')
+  try:
+    output = subprocess.check_output('iwconfig', stderr=devnull)
+  except (OSError, subprocess.CalledProcessError):
+    return (ssid, mac)
+  finally:
+    devnull.close()
+  # parse ssid and mac from output
+  for line in output.splitlines():
+    if not mac:
+      match = re.search(r'^.*access point: ([a-fA-F0-9:]+)\s*$', line, re.I)
+      if match:
+        mac = match.group(1)
+    if not ssid:
+      match = re.search(r'^.*SSID:"(.*)"\s*$', line)
+      if match:
+        ssid = match.group(1)
+  return (ssid, mac)
+
+
+def log(logfile, result, now):
+  """Log the result of the ping to the given log file.
+  Writes the ping milliseconds ("result"), current timestamp ("now"), wifi ssid,
+  and wifi mac address as separate columns in a line appended to the file."""
+  (ssid, mac) = get_wifi_info()
+  if ssid is None:
+    ssid = ''
+  if mac is None:
+    mac = ''
+  with open(logfile, 'a') as filehandle:
+    if result == 0 or result >= 100:
+      filehandle.write("{:d}\t{:d}\t{}\t{}\n".format(int(result), now, ssid, mac))
+    else:
+      filehandle.write("{:.1f}\t{:d}\t{}\t{}\n".format(result, now, ssid, mac))
 
 
 def calc_up_stat1(history, history_length):
