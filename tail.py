@@ -40,6 +40,7 @@ class Tail(object):
         self.tailed_file = tailed_file
         self.callback = sys.stdout.write
         self.max_line_length=max_line_length
+        self.wait_func = None
 
     def follow(self, s=1, poll_time=.01):
         ''' Do a tail follow. If a callback function is registered it is called with every new line. 
@@ -47,6 +48,7 @@ class Tail(object):
     
         Arguments:
             s - Number of seconds to wait between each iteration; Defaults to 1. '''
+        last = int(time.time())
         readBuffer = StringIO()
         with open(self.tailed_file, 'rb') as file_:
             file_.seek(0, os.SEEK_END)
@@ -62,6 +64,9 @@ class Tail(object):
                     self.callback(line)
                     time.sleep(s)
 
+                if self.wait_func:
+                    last = self.run_wait(last)
+                
                 # Catch the slop if the last line isn't complete
                 readBuffer.truncate(0)
                 if not complete:
@@ -72,9 +77,20 @@ class Tail(object):
                 
                 time.sleep(poll_time)
 
+    def run_wait(self, last, interval=1):
+        now = int(time.time())
+        if now > last + interval:
+            self.wait_func()
+            last = last + interval
+        return last
+
     def register_callback(self, func):
         ''' Overrides default callback function to provided function. '''
         self.callback = func
+
+    def register_wait_func(self, func):
+        ''' Overrides default wait_func to provided function. '''
+        self.wait_func = func
 
     def check_file_validity(self, file_):
         ''' Check whether the a given file exists, readable and is a file '''
