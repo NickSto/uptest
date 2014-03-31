@@ -10,6 +10,7 @@ import ConfigParser
 DATA_DIRNAME = '.nbsstate'
 CONFIG_FILENAME = 'upmonitor.cfg'
 DROPPED_MSG = '*****DROPPED*****'
+STARTUP_MSG = 'Waiting for the next ping result..   \t'
 
 OPT_DEFAULTS = {}
 USAGE = "%(prog)s [options]"
@@ -20,25 +21,26 @@ EPILOG = """"""
 
 def main():
 
+  # read arguments
   parser = argparse.ArgumentParser(
     description=DESCRIPTION, epilog=EPILOG)
   parser.set_defaults(**OPT_DEFAULTS)
-
   parser.add_argument('log', metavar='logfile', nargs='?',
     help="""The log file to watch instead of the default.""")
   parser.add_argument('-c', '--config', metavar='configfile',
     help='The file containing settings info for the upmonitor process, '
       'including where to find the log file. Default: ~/'+DATA_DIRNAME+'/'
       +CONFIG_FILENAME)
-
   args = parser.parse_args()
 
+  # determine path to config file
   if args.config:
     config_filepath = args.config
   else:
     config_filepath = os.path.join(os.path.expanduser('~'), DATA_DIRNAME,
       CONFIG_FILENAME)
 
+  # read config file to get path to log file
   if args.log:
     log_filepath = args.log
   else:
@@ -50,9 +52,12 @@ def main():
       fail('Error: Cannot find a log file. Are you sure upmonitor.py is '
         'writing one?')
 
+  # set up the tail, and start following lines appended to the log file
   log_tail = tail.Tail(log_filepath)
   log_tail.register_callback(callback)
   log_tail.register_wait_func(wait_func)
+  sys.stdout.write(STARTUP_MSG)
+  sys.stdout.flush()
   try:
     log_tail.follow(s=1)
   except KeyboardInterrupt:
@@ -60,6 +65,8 @@ def main():
 
 
 def callback(line):
+  """Read and interpret a line from the log file and print a display of it.
+  This will be called by tail on receiving each line."""
   line = line.strip()
   fields = line.split('\t')
   msg_width = len(DROPPED_MSG)
@@ -83,6 +90,8 @@ def callback(line):
 
 
 def wait_func():
+  """Print a star to indicate progress toward the next line.
+  This is to be called every second while tail is waiting for a line."""
   sys.stdout.write('*')
   sys.stdout.flush()
 
