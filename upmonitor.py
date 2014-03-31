@@ -1,7 +1,7 @@
 #!/usr/bin/env python
+#TODO: Try using httplib directly instead of curl
 #TODO: Maybe an algorithm to automatically switch to curl if there's a streak of
 #      failed pings (so no manual intervention is needed)
-#TODO: Try using httplib directly instead of curl
 from __future__ import division
 import re
 import os
@@ -14,20 +14,11 @@ import subprocess
 import ConfigParser
 import distutils.spawn
 
-def tobool(bool_str):
-  if bool_str == 'True':
-    return True
-  elif bool_str == 'False':
-    return False
-  else:
-    raise ValueError('invalid boolean literal: '+bool_str)
-
 OPT_DEFAULTS = {'server':'google.com', 'history_length':5, 'frequency':5,
   'timeout':2, 'method':'ping'}
 OPT_TYPES = {'server':str, 'history_length':int, 'frequency':int, 'timeout':int,
-  'method':str, 'stdout':tobool, 'logfile':os.path.abspath,
-  'data_dir':os.path.abspath}
-USAGE = "%(prog)s [options]"
+  'method':str, 'logfile':os.path.abspath, 'data_dir':os.path.abspath}
+# USAGE = "%(prog)s [options]"
 DESCRIPTION = """Track and summarize the recent history of connectivity by
 pinging an external server. Can print a textual summary figure to stdout or to
 a file, which can be read and displayed by utilities like indicator-sysmonitor.
@@ -44,12 +35,13 @@ SILENCE_FILENAME = 'SILENCE'
 HISTORY_FILENAME = 'uphistory.txt'
 STATUS_FILENAME = 'upstatus.txt'
 CONFIG_FILENAME = 'upmonitor.cfg'
+SHUTDOWN_STATUS = '[OFFLINE]'
 
 def main():
 
-  parser = argparse.ArgumentParser(
-    description=DESCRIPTION, epilog=EPILOG)
+  parser = argparse.ArgumentParser(description=DESCRIPTION, epilog=EPILOG)
   parser.set_defaults(**OPT_DEFAULTS)
+  OPT_TYPES['stdout'] = tobool
 
   parser.add_argument('-s', '--server',
     help="""The server to ping. Default: %(default)s""")
@@ -89,20 +81,26 @@ command). This file can be tracked in real-time with upview.py.""")
   (history_file, status_file, config_file) = make_paths(args.data_dir)
 
   # write settings to config file
-  write_config(config_file, args)
-  args.die = False
+  config = ConfigParser.RawConfigParser()
+  set_config_args(config, args)
+  write_config(config, config_file)
 
-  # attach signal handler to write special status on shutdown
-  global invalidate_status
+  # attach signal handler to write special status on shutdown or exception
   def invalidate_status():
     with open(status_file, 'w') as filehandle:
-      filehandle.write('[OFFLINE]')
+      filehandle.write(SHUTDOWN_STATUS)
   def invalidate_and_exit(*args):
     invalidate_status()
     sys.exit()
+  # catch system signals
   for signame in ['SIGINT', 'SIGHUP', 'SIGTERM', 'SIGQUIT']:
     sig = getattr(signal, signame)
     signal.signal(sig, invalidate_and_exit)
+  # catch exceptions
+  def invalidate_and_reraise(type_, value, traceback):
+    invalidate_status()
+    sys.__excepthook__(type_, value, traceback)
+  sys.excepthook = invalidate_and_reraise
 
   # main loop
   now = int(time.time())
@@ -115,10 +113,24 @@ command). This file can be tracked in real-time with upview.py.""")
 
     # read in config file and update args with new settings
     old_args = copy.deepcopy(args)
-    read_config(config_file, args)
-    check_config(args, old_args)
-    if args.die:
-      invalidate_and_exit()
+    try:
+      config = ConfigParser.RawConfigParser()
+      config.read(config_file)
+      read_config_args(config, args)
+      check_config(args, old_args)
+      if config.has_option('meta', 'die'):
+        invalidate_and_exit()
+    except ConfigParser.Error:
+      # keeping the process up is secondary to changing settings on the fly
+      pass
+    (history_file, status_file, config_file) = make_paths(args.data_dir)
+    # update config file with new settings
+    try:
+      config = ConfigParser.RawConfigParser()
+      set_config_args(config, args)
+      write_config(config, config_file)
+    except ConfigParser.Error:
+      pass
 
     # read in history from file
     history = []
@@ -150,7 +162,7 @@ command). This file can be tracked in real-time with upview.py.""")
     # write status stat to file (or stdout)
     if os.path.exists(status_file) and not os.path.isfile(status_file):
       fail('Error: status file "'+status_file+'" is a non-file.')
-    status_str = status_format2(history, args.history_length)
+    status_str = status_format(history, args.history_length)
     if args.stdout:
       print status_str
     else:
@@ -161,7 +173,9 @@ command). This file can be tracked in real-time with upview.py.""")
 
 
 def make_paths(data_dir):
-  """Give args.data_dir as argument."""
+  """Create the full paths of the files in the data_dir directory.
+  Give args.data_dir as the argument.
+  Returns (history_file, status_file, config_file)."""
   home_dir = os.path.expanduser('~')
   if not data_dir:
     data_dir = os.path.join(home_dir, DATA_DIRNAME)
@@ -171,40 +185,35 @@ def make_paths(data_dir):
   return (history_file, status_file, config_file)
 
 
-def write_config(config_file, args):
-  """Write settings (including argparse args) to the config file."""
-  config = ConfigParser.RawConfigParser()
+def set_config_args(config, args):
+  """Write settings (argparse args) to the 'args' section of the config file."""
   config.add_section('args')
   for arg in vars(args):
     value = getattr(args, arg)
     if value is not None:
       config.set('args', arg, getattr(args, arg))
+
+
+def write_config(config, config_file):
+  """Set the config sections that aren't 'args' and write to file."""
   config.add_section('meta')
   config.set('meta', 'pid', os.getpid())
   with open(config_file, 'wb') as filehandle:
     config.write(filehandle)
 
 
-def read_config(config_file, args):
+def read_config_args(config, args):
   """Read all arguments from config file and update args attributes with them.
   If the [meta] "die" option is present, set args.die to True.
   If there is any error reading the file, change nothing and return."""
-  config = ConfigParser.RawConfigParser()
-  try:
-    config.read(config_file)
-    for arg in config.options('args'):
-      # if the option exists, cast it to the proper type and set as args attr
-      if config.has_option('args', arg):
-        cast = OPT_TYPES[arg]
-        try:
-          setattr(args, arg, cast(config.get('args', arg)))
-        except ValueError:
-          pass
-    # die?
-    if config.has_option('meta', 'die'):
-      args.die = True
-  except ConfigParser.Error:
-    return
+  for arg in config.options('args'):
+    # if the option exists, cast it to the proper type and set as args attr
+    if config.has_option('args', arg):
+      cast = OPT_TYPES[arg]
+      try:
+        setattr(args, arg, cast(config.get('args', arg)))
+      except ValueError:
+        pass
 
 
 def check_config(args, old_args=None):
@@ -240,8 +249,7 @@ def get_history(history_file, history_length):
   "timestamp" is an int and "status" is either "up" or "down". Lines which don't
   conform to "timestamp\tstatus" are skipped. If the file does not exist or is
   empty, an empty list is returned. The list is in the same order as the lines
-  in the file.
-  """
+  in the file."""
   history = []
   with open(history_file, 'rU') as file_handle:
     for line in file_handle:
@@ -256,7 +264,8 @@ def get_history(history_file, history_length):
 def prune_history(history, past_points, frequency, now=None):
   """Remove history points older than a cutoff age.
   The cutoff is calculated to ideally retain "past_points" points, assuming
-  pings have consistently been sent every "frequency" seconds."""
+  pings have consistently been sent every "frequency" seconds. See get_history()
+  for the format of the "history" data structure."""
   if now is None:
     now = int(time.time())
   cutoff = now - (frequency * past_points) - 2 # 2 second fudge factor
@@ -313,6 +322,7 @@ def parse_ping(ping_str):
 
 
 def parse_curl(curl_str):
+  """Parse the output of curl into a number of milliseconds (float)."""
   try:
     return 1000*float(curl_str)
   except ValueError:
@@ -320,6 +330,8 @@ def parse_curl(curl_str):
 
 
 def write_history(history_file, history):
+  """Write the current history data structure to the history file.
+  See get_history() for the format of the "history" data structure."""
   with open(history_file, 'w') as filehandle:
     for line in history:
       filehandle.write("{}\t{}\n".format(line[0], line[1]))
@@ -327,7 +339,7 @@ def write_history(history_file, history):
 
 def get_wifi_info():
   """Find out what the wifi SSID and MAC address are.
-  Returns those two values as strings. If you are not connected to wifi or an
+  Returns those two values as strings. If you are not connected to wifi or if an
   error occurs, returns two None's."""
   ssid = None
   mac = None
@@ -371,49 +383,8 @@ def log(logfile, result, now):
       filehandle.write("{:.1f}\t{:d}\t{}\t{}\n".format(result, now, ssid, mac))
 
 
-def calc_up_stat1(history, history_length):
-  up_sum = 0
-  down_sum = 0
-  for line in history:
-    if line[1] == 'up':
-      up_sum += 1
-    elif line[1] == 'down':
-      down_sum += 1
-  return up_sum/(up_sum+down_sum)
-
-
-def calc_up_stat2(history, history_length):
-  total = 0
-  up_sum = 0
-  multiplier = history_length
-  for line in reversed(history):
-    total += multiplier
-    if line[1] == 'up':
-      up_sum += multiplier
-    multiplier-=1
-  return up_sum/total
-
-
-def write_status(status_file, history, history_length):
-  status_str = status_format2(history, history_length)
-  with open(status_file, 'w') as filehandle:
-    filehandle.write(status_str.encode('utf8'))
-
-
-def status_format1(history, history_length):
-  up_stat = calc_up_stat2(history, history_length)
-  stars_width = 6
-  stars = int(round(stars_width*up_stat))
-  if stars == 0:
-    status_str = 'DOWN'
-  elif stars == stars_width:
-    status_str = '   100%'
-  else:
-    status_str = ' ' + ('  ' * (stars_width - stars)) + ('*' * stars)
-  return status_str
-
-
-def status_format2(history, history_length):
+def status_format(history, history_length):
+  """Create a human-readable status display string out of the recent history."""
   status_str = u'['
   for line in history:
     if line[1] == 'up':
@@ -449,13 +420,20 @@ def sleep(target, delay=5, precision=0.1):
   return target + delay
 
 
+def tobool(bool_str):
+  """Parse a bool literal from a str."""
+  if bool_str == 'True':
+    return True
+  elif bool_str == 'False':
+    return False
+  else:
+    raise ValueError('invalid boolean literal: '+bool_str)
+
+
 def fail(message):
   sys.stderr.write(message+"\n")
   sys.exit(1)
 
+
 if __name__ == '__main__':
-  try:
-    main()
-  except Exception:
-    invalidate_status()
-    raise
+  main()
