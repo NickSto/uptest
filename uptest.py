@@ -1,4 +1,6 @@
-#!/usr/bin/python
+#!/usr/bin/env python
+#DEPRECATED: upmonitor.py and upview.py have eclipsed this script's
+#            functionality before it was finished.
 """
 Next step:
 Change the items in the "pings" list from processes to tuples holding the final
@@ -69,11 +71,12 @@ import Queue
 DEFAULTS = {'log_file':'', 'frequency':5, 'curl':False, 'server':'google.com',
   'debug':False}
 USAGE = """Usage: %prog -f 15 -l path/to/log.txt -s server.com"""
-DESCRIPTION = """This periodically tests your connection, showing whether your
-internet is currently up or down. It works by testing if it can reach an
-external server, to make sure there is no block at any point in your connection.
-Dropped packets mean it's "down", returned ones mean it's "up". Latency isn't
-taken into account.
+DESCRIPTION = """WARNING: This is an unfinished experiment which has been
+superseded by upmonitor.py and upview.py.
+It periodically tests your connection, showing whether your internet is
+currently up or down. It works by testing if it can reach an external server,
+to make sure there is no block at any point in your connection. Dropped packets
+mean it's "down", returned ones mean it's "up". Latency isn't taken into account.
 Note: at the moment it can't detect an intercepted request, such as a wifi
 hotspot login page. Even curl only tests that SOME result was returned, not that
 it's the correct one.
