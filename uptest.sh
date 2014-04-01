@@ -1,15 +1,16 @@
 #!/usr/bin/env bash
 SILENCE="$HOME/.nbsstate/SILENCE"
 SLEEP_DEFAULT=5
-LOGFILE_DEFAULT="$HOME/aa/code/0projects/uptest/uptest_log.txt"
-USAGE="USAGE: $(basename $0) [sleep seconds] [-l [log]]
+LOGFILE_DEFAULT="$HOME/.nbsstate/uptest.log"
+USAGE="USAGE: $(basename $0) [sleep seconds [-l [log]]]
   e.g. $(basename $0) 10 -l log.txt
 sleep seconds: Optional, default is $SLEEP_DEFAULT seconds.
 -l: Optional, default is no logging. Sleep seconds must be given if -l is.
     If -l is given alone, it will log to the default file:
-      $LOGFILE_DEFAULT
+    $LOGFILE_DEFAULT
     If a filename is given after -l, it will log to that file.
-    If silence file $SILENCE exists, it will stop logging until it is gone."
+    If silence file named "$SILENCE" exists, it will stop
+    logging until it is gone."
 sleep=$SLEEP_DEFAULT
 logfile=$LOGFILE_DEFAULT
 if [ "$1" ]; then
