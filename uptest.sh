@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+if [ ! -d "$HOME/.nbsstate" ]; then
+  mkdir "$HOME/.nbsstate"
+fi
+
 SILENCE="$HOME/.nbsstate/SILENCE"
 SLEEP_DEFAULT=5
 LOGFILE_DEFAULT="$HOME/.nbsstate/uptest.log"
@@ -48,10 +52,11 @@ while [ 1 ]; do
       ms=0
     fi
     result="$ms ms\tfrom $dest"
-    logline="$ms\t$last"
+    #logline="$ms\t$last"
+    logline="1,\t$last"
   else
     result="**********DROPPED**********"
-    logline="0\t$last"
+    logline="0,\t$last"
     #sleeptime=5
   fi
   
