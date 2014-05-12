@@ -7,7 +7,7 @@ import argparse
 import datetime
 import ConfigParser
 
-DATA_DIRNAME = '.nbsstate'
+DATA_DIRNAME = '.local/share/nbsdata'
 CONFIG_FILENAME = 'upmonitor.cfg'
 DROPPED_MSG = '*****DROPPED*****'
 STARTUP_MSG = 'Waiting for the next ping result..   \t'
@@ -37,8 +37,9 @@ def main():
   if args.config:
     config_filepath = args.config
   else:
-    config_filepath = os.path.join(os.path.expanduser('~'), DATA_DIRNAME,
-      CONFIG_FILENAME)
+    config_filepath = os.path.join(
+      os.path.expanduser('~'), DATA_DIRNAME, CONFIG_FILENAME
+    )
 
   # read config file to get path to log file
   if args.log:

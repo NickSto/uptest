@@ -1,5 +1,7 @@
 #!/usr/bin/env python
 #TODO: Try using httplib directly instead of curl
+#TODO: Make curl look for an expected response, to catch an intercepted
+#      connection at a wifi access point.
 #TODO: Maybe an algorithm to automatically switch to curl if there's a streak of
 #      failed pings (so no manual intervention is needed)
 from __future__ import division
@@ -30,7 +32,7 @@ process by editing upmonitor.cfg. Any invalid settings will be ignored, however.
 """
 EPILOG = """"""
 
-DATA_DIRNAME = '.nbsstate'
+DATA_DIRNAME = '.local/share/nbsdata'
 SILENCE_FILENAME = 'SILENCE'
 HISTORY_FILENAME = 'uphistory.txt'
 STATUS_FILENAME = 'upstatus.txt'
@@ -173,12 +175,15 @@ command). This file can be tracked in real-time with upview.py.""")
 
 
 def make_paths(data_dir):
-  """Create the full paths of the files in the data_dir directory.
-  Give args.data_dir as the argument.
+  """Create the the data_dir directory and return full paths to its files.
+  Give args.data_dir as the argument. If args.data_dir is false, the data_dir
+  will be DATA_DIRNAME in the user's home directory.
   Returns (history_file, status_file, config_file)."""
   home_dir = os.path.expanduser('~')
   if not data_dir:
     data_dir = os.path.join(home_dir, DATA_DIRNAME)
+  if not os.path.exists(data_dir):
+    os.makedirs(data_dir)
   history_file = os.path.join(data_dir, HISTORY_FILENAME)
   status_file = os.path.join(data_dir, STATUS_FILENAME)
   config_file = os.path.join(data_dir, CONFIG_FILENAME)
