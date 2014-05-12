@@ -38,7 +38,7 @@ while [ 1 ]; do
     continue
   fi
   humantime=$(date '+%Y-%m-%d %H:%M:%S')
-  response=$(ping -n -c 1 google.com 2>/dev/null | grep 'bytes from')
+  response=$(ping -n -c 1 -W 4 google.com 2>/dev/null | grep 'bytes from')
   # todo: decide success based on the summary line ("1 received")
   if [ ${#response} -gt 0 ]; then
     dest=$(echo $response | sed -E 's/^.*from ([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+): .*$/\1/')
