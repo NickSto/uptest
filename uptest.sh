@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-SILENCE="$HOME/.nbsstate/SILENCE"
+SILENCE="$HOME/.local/share/nbsdata/SILENCE"
 SLEEP_DEFAULT=5
-LOGFILE_DEFAULT="$HOME/.nbsstate/uptest.log"
+LOGFILE_DEFAULT="$HOME/.local/share/nbsdata/uptest.log"
 USAGE="USAGE: $(basename $0) [sleep seconds [-l [log]]]
   e.g. $(basename $0) 10 -l log.txt
 sleep seconds: Optional, default is $SLEEP_DEFAULT seconds.
