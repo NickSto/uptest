@@ -12,7 +12,9 @@ if [ "$1" ]; then
     exit 1
   fi
 fi
+
 while [ 1 ]; do
+  last=$(date +%s)
   sleeptime=$sleep
   response=$(ping -c 1 google.com 2>/dev/null | grep 'bytes from')
   if [ ${#response} -gt 0 ]; then
@@ -23,10 +25,15 @@ while [ 1 ]; do
     echo -ne "**********************DROPPED**********************\t"
     sleeptime=5
   fi
-  while [ $sleeptime -gt 0 ]; do
+  
+  now=$(date +%s)
+  elapsed=$((now - last))
+  echo -n "start: $elapsed "
+  while [ $elapsed -lt $sleeptime ]; do
     echo -n '*'
     sleep 1
-    sleeptime=$((sleeptime-1))
+    now=$(date +%s)
+    elapsed=$((now - last))
   done
   echo -ne "\n"
 done
