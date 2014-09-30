@@ -53,29 +53,29 @@ def main():
   OPT_TYPES['stdout'] = tobool
 
   parser.add_argument('-s', '--server',
-    help="""The server to ping. Default: %(default)s""")
+    help='The server to ping. Default: %(default)s')
   parser.add_argument('-o', '--stdout', action='store_true',
-    help="""Print status summary to stdout instead of a file.""")
+    help='Print status summary to stdout instead of a file.')
   parser.add_argument('-f', '--frequency', type=OPT_TYPES['frequency'],
-    help="""How frequently to test the connection. Give the interval time in
-seconds. Default: %(default)s""")
+    help='How frequently to test the connection. Give the interval time in '
+      'seconds. Default: %(default)s')
   parser.add_argument('-l', '--history-length', metavar='LENGTH',
     type=OPT_TYPES['history_length'],
-    help="""The number of previous ping tests to keep track of and display.
-Default: %(default)s""")
+    help='The number of previous ping tests to keep track of and display. '
+     'Default: %(default)s')
   parser.add_argument('-c', '--curl', dest='method', action='store_const',
     const='curl',
-    help="""Use curl instead of ping as the connection test.""")
+    help='Use curl instead of ping as the connection test.')
   parser.add_argument('-t', '--timeout', type=OPT_TYPES['timeout'],
-    help="""Seconds to wait for a response to each ping. Cannot be greater than 
-"frequency". Default: %(default)s""")
+    help='Seconds to wait for a response to each ping. Cannot be greater than '
+      '"frequency". Default: %(default)s')
   parser.add_argument('-L', '--logfile', type=OPT_TYPES['logfile'],
-    help="""Give a file to log ping history to. Will record the ping latency,
-the time, and if possible, the wifi SSID and MAC address (using the "iwconfig"
-command). These will be in 4 tab-delimited columns, one line per ping. This file
-can be tracked in real-time with upview.py. N.B.: If you aren't connected to
-wifi (or if your traffic isn't using wifi), the SSID and MAC address fields will
-be empty (but present).""")
+    help='Give a file to log ping history to. Will record the ping latency, '
+      'the time, and if possible, the wifi SSID and MAC address (using the '
+      '"iwconfig" command). These will be in 4 tab-delimited columns, one line '
+      'per ping. This file can be tracked in real-time with upview.py. N.B.: '
+      'If you aren\'t connected to wifi (or if your traffic isn\'t using wifi)'
+      ', the SSID and MAC address fields will be empty (but present).')
   parser.add_argument('-d', '--data-dir', metavar='DIRNAME',
     type=OPT_TYPES['data_dir'],
     help='The directory where data will be stored. History data will be kept '
