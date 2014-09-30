@@ -44,7 +44,7 @@ HISTORY_FILENAME = 'uphistory.txt'
 STATUS_FILENAME = 'upstatus.txt'
 CONFIG_FILENAME = 'upmonitor.cfg'
 SHUTDOWN_STATUS = '[OFFLINE]'
-IP_ROUTE_REGEX = r'^(?:\d{1,3}\.){3}\d{1,3}\s+via\s+(?:\d{1,3}\.){3}\d{1,3}\s+dev\s+(\S+)\s+src\s+(?:\d{1,3}\.){3}\d{1,3}'
+DEFAULT_ROUTE_REGEX = r'^default\s+via\s+((?:\d{1,3}\.){3}\d{1,3})\s+dev\s+(\S+)\s+\S+\s+\S+\s*$'
 
 def main():
 
@@ -164,7 +164,7 @@ be empty (but present).""")
 
     # log result
     if args.logfile:
-      log(args.logfile, result, now, server=args.server)
+      log(args.logfile, result, now)
 
     # write new history back to file
     if os.path.exists(history_file) and not os.path.isfile(history_file):
@@ -391,47 +391,32 @@ def get_wifi_info():
   return (interface, ssid, mac)
 
 
-def get_default_interface(domain='google.com'):
+def get_default_route():
   """Determine the default networking interface in use at the moment by using
-  the 'ip route get' command for a known external IP.
-  Returns None on error."""
-  # Other IP's to check: 127.1.2.3 (local), 0.5.4.3 (unroutable)
-  EXTERNAL_IP_DEFAULT = '74.125.228.6'
+  the 'ip route show' command.
+  Returns the name of the interface, and the ip of the default route. Or, on
+  error, returns (None, None)."""
   interface = None
+  ip = None
   # check if 'ip' command is available
   if not distutils.spawn.find_executable('ip'):
-    return None
-  # call 'ip' command
-  output = get_ip_route(EXTERNAL_IP_DEFAULT)
-  # output is None if there's an error in the 'ip' command or its output
-  if output is None:
-    sys.stderr.write('External ip '+EXTERNAL_IP_DEFAULT+' not routable. '
-      'Doing extra DNS query to find a new one.\n')
-    external_ip = dig_ip(domain)
-    if external_ip is None:
-      return None
-    output = get_ip_route(external_ip)
-    if output is None:
-      return None
-  match = re.search(IP_ROUTE_REGEX, output)
-  if match:
-    interface = match.group(1)
-  return interface
-
-
-def get_ip_route(ip):
-  """Do 'ip route get [ip]' command, returning None on error or if the output
-  is not expected (doesn't match IP_ROUTE_REGEX)."""
+    return (None, None)
+  # call 'ip route show'
   devnull = open(os.devnull, 'w')
   try:
-    output = subprocess.check_output(['ip', 'route', 'get', ip], stderr=devnull)
+    output = subprocess.check_output(['ip', 'route', 'show'], stderr=devnull)
   except (OSError, subprocess.CalledProcessError):
-    return None
+    return (None, None)
   finally:
     devnull.close()
-  if not re.search(IP_ROUTE_REGEX, output):
-    return None
-  return output
+  # parse output
+  for line in output.splitlines():
+    match = re.search(DEFAULT_ROUTE_REGEX, line)
+    if match:
+      ip = match.group(1)
+      interface = match.group(2)
+      break
+  return (interface, ip)
 
 
 def dig_ip(domain):
@@ -453,14 +438,14 @@ def dig_ip(domain):
 
 #TODO: If you aren't connected to wifi, record the MAC address of whatever your
 #      default interface is connected to.
-def log(logfile, result, now, server='google.com'):
+def log(logfile, result, now):
   """Log the result of the ping to the given log file.
   Writes the ping milliseconds ("result"), current timestamp ("now"), wifi ssid,
   and wifi mac address as separate columns in a line appended to the file.
   If you're not connected to wifi, or if it isn't your default interface, the
   ssid and mac columns will be empty."""
   (wifi_interface, ssid, mac) = get_wifi_info()
-  active_interface = get_default_interface(server)
+  (active_interface, default_route) = get_default_route()
   if wifi_interface != active_interface:
     ssid = ''
     mac = ''
