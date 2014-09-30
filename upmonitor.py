@@ -45,6 +45,7 @@ STATUS_FILENAME = 'upstatus.txt'
 CONFIG_FILENAME = 'upmonitor.cfg'
 SHUTDOWN_STATUS = '[OFFLINE]'
 DEFAULT_ROUTE_REGEX = r'^default\s+via\s+((?:\d{1,3}\.){3}\d{1,3})\s+dev\s+(\S+)\s+\S+\s+\S+\s*$'
+ARP_A_REGEX = r'^\S+\s+\(((?:\d{1,3}\.){3}\d{1,3})\)\s+at\s+((?:[0-9a-f]{2}:){5}[0-9a-f]{2})\s+\S+\s+on\s+\S+\s*$'
 
 def main():
 
@@ -74,8 +75,11 @@ def main():
       'the time, and if possible, the wifi SSID and MAC address (using the '
       '"iwconfig" command). These will be in 4 tab-delimited columns, one line '
       'per ping. This file can be tracked in real-time with upview.py. N.B.: '
-      'If you aren\'t connected to wifi (or if your traffic isn\'t using wifi)'
-      ', the SSID and MAC address fields will be empty (but present).')
+      'If you aren\'t connected to wifi, the SSID and MAC address fields will '
+      'be empty (but present). If you\'re connected, but the pings aren\'t '
+      'going through the wifi connection, the SSID will be empty but the MAC '
+      'will be the address of whatever device you\'re actually using (like '
+      'an Ethernet switch).')
   parser.add_argument('-d', '--data-dir', metavar='DIRNAME',
     type=OPT_TYPES['data_dir'],
     help='The directory where data will be stored. History data will be kept '
@@ -394,7 +398,7 @@ def get_wifi_info():
 def get_default_route():
   """Determine the default networking interface in use at the moment by using
   the 'ip route show' command.
-  Returns the name of the interface, and the ip of the default route. Or, on
+  Returns the name of the interface, and the IP of the default route. Or, on
   error, returns (None, None)."""
   interface = None
   ip = None
@@ -422,17 +426,42 @@ def get_default_route():
 def dig_ip(domain):
   """Use 'dig' command to get the first IP returned in a DNS query for 'domain'.
   On error, or no result, returns None."""
+  ip = None
   if not distutils.spawn.find_executable('ip'):
     return None
   devnull = open(os.devnull, 'w')
   try:
-    output = subprocess.check_output(['dig', '+short', '+time=1', '+tries=2', domain], stderr=devnull)
+    output = subprocess.check_output(['dig', '+short', '+time=1', '+tries=2',
+                                      domain],
+                                     stderr=devnull)
   except (OSError, subprocess.CalledProcessError):
     return None
   finally:
     devnull.close()
   for line in output.splitlines():
-    return line.strip()
+    ip = line.strip()
+    return ip
+  return None
+
+
+def get_mac_from_ip(ip):
+  """Use 'arp -a' command to look up the MAC address of an IP on the LAN.
+  Returns None on error, or if the IP isn't found."""
+  mac = None
+  if not distutils.spawn.find_executable('arp'):
+    return None
+  devnull = open(os.devnull, 'w')
+  try:
+    output = subprocess.check_output(['arp', '-a'], stderr=devnull)
+  except (OSError, subprocess.CalledProcessError):
+    return None
+  finally:
+    devnull.close()
+  for line in output.splitlines():
+    match = re.search(ARP_A_REGEX, line)
+    if match and match.group(1) == ip:
+      mac = match.group(2)
+      return mac.upper()
   return None
 
 
@@ -440,15 +469,18 @@ def dig_ip(domain):
 #      default interface is connected to.
 def log(logfile, result, now):
   """Log the result of the ping to the given log file.
-  Writes the ping milliseconds ("result"), current timestamp ("now"), wifi ssid,
-  and wifi mac address as separate columns in a line appended to the file.
+  Writes the ping milliseconds ("result"), current timestamp ("now"), wifi SSID,
+  and wifi MAC address as separate columns in a line appended to the file.
   If you're not connected to wifi, or if it isn't your default interface, the
-  ssid and mac columns will be empty."""
+  SSID column will be empty and the MAC address will be of whatever device
+  your default interface is attached to (the default route)."""
   (wifi_interface, ssid, mac) = get_wifi_info()
   (active_interface, default_route) = get_default_route()
   if wifi_interface != active_interface:
     ssid = ''
-    mac = ''
+    mac = get_mac_from_ip(default_route)
+    if mac is None:
+      mac = ''
   if ssid is None:
     ssid = ''
   if mac is None:
