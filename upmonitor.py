@@ -1,4 +1,10 @@
 #!/usr/bin/env python
+#TODO: When your packets are all being dropped, but you have an interface that's
+#      "connected" (think a wifi router with no internet connection), ping
+#      doesn't "obey" the -W timeout, getting stuck in a DNS lookup.
+#      Seems the only way to resolve this situation is to do the DNS yourself
+#      and give ping an actual ip address.
+#TODO: When using curl, show a third status: "!" when page is intercepted.
 #TODO: Try using httplib directly instead of curl
 #TODO: Make curl look for an expected response, to catch an intercepted
 #      connection at a wifi access point.
@@ -38,6 +44,7 @@ HISTORY_FILENAME = 'uphistory.txt'
 STATUS_FILENAME = 'upstatus.txt'
 CONFIG_FILENAME = 'upmonitor.cfg'
 SHUTDOWN_STATUS = '[OFFLINE]'
+IP_ROUTE_REGEX = r'^(?:\d{1,3}\.){3}\d{1,3}\s+via\s+(?:\d{1,3}\.){3}\d{1,3}\s+dev\s+(\S+)\s+src\s+(?:\d{1,3}\.){3}\d{1,3}'
 
 def main():
 
@@ -64,8 +71,11 @@ Default: %(default)s""")
 "frequency". Default: %(default)s""")
   parser.add_argument('-L', '--logfile', type=OPT_TYPES['logfile'],
     help="""Give a file to log ping history to. Will record the ping latency,
-the time, and if possilbe, the wifi SSID and MAC address (using the "iwconfig"
-command). This file can be tracked in real-time with upview.py.""")
+the time, and if possible, the wifi SSID and MAC address (using the "iwconfig"
+command). These will be in 4 tab-delimited columns, one line per ping. This file
+can be tracked in real-time with upview.py. N.B.: If you aren't connected to
+wifi (or if your traffic isn't using wifi), the SSID and MAC address fields will
+be empty (but present).""")
   parser.add_argument('-d', '--data-dir', metavar='DIRNAME',
     type=OPT_TYPES['data_dir'],
     help='The directory where data will be stored. History data will be kept '
@@ -154,7 +164,7 @@ command). This file can be tracked in real-time with upview.py.""")
 
     # log result
     if args.logfile:
-      log(args.logfile, result, now)
+      log(args.logfile, result, now, server=args.server)
 
     # write new history back to file
     if os.path.exists(history_file) and not os.path.isfile(history_file):
@@ -343,24 +353,31 @@ def write_history(history_file, history):
 
 
 def get_wifi_info():
-  """Find out what the wifi SSID and MAC address are.
-  Returns those two values as strings. If you are not connected to wifi or if an
-  error occurs, returns two None's."""
+  """Find out what the wifi interface name, SSID and MAC address are.
+  Returns those three values as strings, respectively. If you are not connected
+  to wifi or if an error occurs, returns three None's.
+  It currently does this by parsing the output from the 'iwconfig' command.
+  It determines the data from the first section with fields for "SSID"
+  (or "ESSID") and "Access Point" (case-insensitive)."""
   ssid = None
   mac = None
+  interface = None
   # check if iwconfig command is available
   if not distutils.spawn.find_executable('iwconfig'):
-    return (ssid, mac)
+    return (None, None, None)
   # call iwconfig
   devnull = open(os.devnull, 'w')
   try:
-    output = subprocess.check_output('iwconfig', stderr=devnull)
+    output = subprocess.check_output(['iwconfig'], stderr=devnull)
   except (OSError, subprocess.CalledProcessError):
     return (ssid, mac)
   finally:
     devnull.close()
   # parse ssid and mac from output
   for line in output.splitlines():
+    match = re.search(r'^(\S+)\s+\S', line)
+    if match:
+      interface = match.group(1)
     if not mac:
       match = re.search(r'^.*access point: ([a-fA-F0-9:]+)\s*$', line, re.I)
       if match:
@@ -369,14 +386,84 @@ def get_wifi_info():
       match = re.search(r'^.*SSID:"(.*)"\s*$', line)
       if match:
         ssid = match.group(1)
-  return (ssid, mac)
+    if ssid is not None and mac is not None:
+      break
+  return (interface, ssid, mac)
 
 
-def log(logfile, result, now):
+def get_default_interface(domain='google.com'):
+  """Determine the default networking interface in use at the moment by using
+  the 'ip route get' command for a known external IP.
+  Returns None on error."""
+  # Other IP's to check: 127.1.2.3 (local), 0.5.4.3 (unroutable)
+  EXTERNAL_IP_DEFAULT = '74.125.228.6'
+  interface = None
+  # check if 'ip' command is available
+  if not distutils.spawn.find_executable('ip'):
+    return None
+  # call 'ip' command
+  output = get_ip_route(EXTERNAL_IP_DEFAULT)
+  # output is None if there's an error in the 'ip' command or its output
+  if output is None:
+    sys.stderr.write('External ip '+EXTERNAL_IP_DEFAULT+' not routable. '
+      'Doing extra DNS query to find a new one.\n')
+    external_ip = dig_ip(domain)
+    if external_ip is None:
+      return None
+    output = get_ip_route(external_ip)
+    if output is None:
+      return None
+  match = re.search(IP_ROUTE_REGEX, output)
+  if match:
+    interface = match.group(1)
+  return interface
+
+
+def get_ip_route(ip):
+  """Do 'ip route get [ip]' command, returning None on error or if the output
+  is not expected (doesn't match IP_ROUTE_REGEX)."""
+  devnull = open(os.devnull, 'w')
+  try:
+    output = subprocess.check_output(['ip', 'route', 'get', ip], stderr=devnull)
+  except (OSError, subprocess.CalledProcessError):
+    return None
+  finally:
+    devnull.close()
+  if not re.search(IP_ROUTE_REGEX, output):
+    return None
+  return output
+
+
+def dig_ip(domain):
+  """Use 'dig' command to get the first IP returned in a DNS query for 'domain'.
+  On error, or no result, returns None."""
+  if not distutils.spawn.find_executable('ip'):
+    return None
+  devnull = open(os.devnull, 'w')
+  try:
+    output = subprocess.check_output(['dig', '+short', '+time=1', '+tries=2', domain], stderr=devnull)
+  except (OSError, subprocess.CalledProcessError):
+    return None
+  finally:
+    devnull.close()
+  for line in output.splitlines():
+    return line.strip()
+  return None
+
+
+#TODO: If you aren't connected to wifi, record the MAC address of whatever your
+#      default interface is connected to.
+def log(logfile, result, now, server='google.com'):
   """Log the result of the ping to the given log file.
   Writes the ping milliseconds ("result"), current timestamp ("now"), wifi ssid,
-  and wifi mac address as separate columns in a line appended to the file."""
-  (ssid, mac) = get_wifi_info()
+  and wifi mac address as separate columns in a line appended to the file.
+  If you're not connected to wifi, or if it isn't your default interface, the
+  ssid and mac columns will be empty."""
+  (wifi_interface, ssid, mac) = get_wifi_info()
+  active_interface = get_default_interface(server)
+  if wifi_interface != active_interface:
+    ssid = ''
+    mac = ''
   if ssid is None:
     ssid = ''
   if mac is None:
