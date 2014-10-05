@@ -25,6 +25,7 @@ Example:
 import os
 import sys
 import time
+import errno
 from cStringIO import StringIO
 
 class Tail(object):
@@ -100,6 +101,49 @@ class Tail(object):
             raise TailError("File '%s' not readable" % (file_))
         if os.path.isdir(file_):
             raise TailError("File '%s' is a directory" % (file_))
+
+    def get_last(self, num_lines=10, max_buffer=1048576):
+        ''' Read the last n lines of the current state of the file.
+        Equivalent to the command 'tail -n $num_lines $tailed_file'.
+        Will hand the lines to the callback function, just like .follow(). '''
+        buffer_len = 512
+        readBuffer = StringIO()
+        with open(self.tailed_file, 'rb') as file_:
+            lines = []
+            start_of_file = False
+            file_.seek(0, os.SEEK_END)
+            # Read chunks of the end of the file, doubling the chunk size
+            # until it contains 'num_lines' lines
+            while len(lines) < num_lines and not start_of_file:
+                lines = []
+                try:
+                    file_.seek(-buffer_len, os.SEEK_END)
+                except IOError as ioe:
+                    if ioe.errno == errno.EINVAL:
+                        file_.seek(0)
+                        start_of_file = True
+                    else:
+                        raise
+                readBuffer.seek(0)
+                readBuffer.write(file_.read())
+                readBuffer.seek(0)
+                first_line = True
+                for line in readBuffer:
+                    # if not at the file start, skip the first "line"
+                    # (almost always incomplete)
+                    if first_line and not start_of_file:
+                        first_line = False
+                        continue
+                    lines.append(line)
+                buffer_len = 2*buffer_len
+                if buffer_len > max_buffer:
+                    raise TailError("Last %d lines of file '%s' exceeded max "
+                                    "buffer (%d bytes)" %
+                                    (num_lines, self.tailed_file, max_buffer))
+            # Output the last 'num_lines' in the list
+            for line in lines[-num_lines:]:
+                self.callback(line)
+
 
 class TailError(IOError):
     def __init__(self, msg):

@@ -12,12 +12,13 @@ CONFIG_FILENAME = 'upmonitor.cfg'
 DROPPED_MSG = '*****DROPPED*****'
 STARTUP_MSG = 'Waiting for the next ping result..   \t'
 
-OPT_DEFAULTS = {}
+OPT_DEFAULTS = {'past_pings':10}
 USAGE = "%(prog)s [options]"
 DESCRIPTION = """Watch a running log of pings being written by upmonitor.py.
 By default, this will watch the log file specified in the configuration file
 "~/"""+DATA_DIRNAME+'/'+CONFIG_FILENAME+'".'
-EPILOG = """"""
+EPILOG = """Thanks to Kasun Herath for the Python implementation of 'tail -f',
+which this relies on: https://github.com/kasun/python-tail"""
 
 def main():
 
@@ -26,8 +27,10 @@ def main():
     description=DESCRIPTION, epilog=EPILOG)
   parser.set_defaults(**OPT_DEFAULTS)
   parser.add_argument('log', metavar='logfile', nargs='?',
-    help="""The log file to watch instead of the default.""")
-  parser.add_argument('-c', '--config', metavar='configfile',
+    help='The log file to watch instead of the default.')
+  parser.add_argument('-n', '--past-pings', metavar='pings', type=int,
+    help='How many past pings to output on startup.')
+  parser.add_argument('-c', '--config', metavar='configfile.cfg',
     help='The file containing settings info for the upmonitor process, '
       'including where to find the log file. Default: ~/'+DATA_DIRNAME+'/'
       +CONFIG_FILENAME)
@@ -57,8 +60,9 @@ def main():
   log_tail = tail.Tail(log_filepath)
   log_tail.register_callback(callback)
   log_tail.register_wait_func(wait_func)
-  sys.stdout.write(STARTUP_MSG)
-  sys.stdout.flush()
+  # sys.stdout.write(STARTUP_MSG)
+  # sys.stdout.flush()
+  log_tail.get_last(args.past_pings)
   try:
     log_tail.follow(s=1)
   except KeyboardInterrupt:
