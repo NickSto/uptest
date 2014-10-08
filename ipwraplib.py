@@ -2,6 +2,8 @@
 from the OS like wifi SSIDs, MAC addresses, DNS queries, etc."""
 import os
 import re
+import uuid
+import socket
 import subprocess
 import distutils.spawn
 
@@ -116,3 +118,36 @@ def get_mac_from_ip(ip):
       mac = match.group(2)
       return mac.upper()
   return None
+
+
+def get_mac():
+  """Get your own device's MAC address using uuid.getnode().
+  Returns the MAC formatted in standard hex with colons."""
+  # uuid.getnode() returns the MAC as an integer
+  mac_hex = hex(uuid.getnode())
+  # [2:] removes leading '0x'
+  mac_hex = mac_hex[2:]
+  # fill in leading 0's, if needed
+  mac_hex = ('0' * (13 - len(mac_hex))) + mac_hex
+  # remove trailing 'L'
+  mac_hex = mac_hex[:12]
+  # build mac from characters in mac_hex, inserting colons
+  mac = ''
+  for (i, char) in enumerate(mac_hex):
+    if i > 1 and i % 2 == 0:
+      mac += ':'
+    mac += char
+  return mac
+
+
+def get_ip():
+  """Get this machine's IP address.
+  Should return the actual one used to connect to public IP's, if multiple
+  interfaces are being used."""
+  #TODO: Use get_default_route() to determine correct interface, and directly
+  #      query its IP instead of kludge of making a dummy connection.
+  sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+  sock.connect(('8.8.8.8', 53))
+  ip = sock.getsockname()[0]
+  sock.close()
+  return ip
