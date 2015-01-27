@@ -5,9 +5,10 @@
 #      Seems the only way to resolve this situation is to do the DNS yourself
 #      and give ping an actual ip address.
 #TODO: When using curl, show a third status: "!" when page is intercepted.
+#      Use http://www.gstatic.com/generate_204 for this by default.
+#      See Google Chrome's methods for detecting interception:
+#      http://www.chromium.org/chromium-os/chromiumos-design-docs/network-portal-detection
 #TODO: Try using httplib directly instead of curl
-#TODO: Make curl look for an expected response, to catch an intercepted
-#      connection at a wifi access point.
 #TODO: Maybe an algorithm to automatically switch to curl if there's a streak of
 #      failed pings (so no manual intervention is needed)
 from __future__ import division
