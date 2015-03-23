@@ -18,6 +18,8 @@ import sys
 import copy
 import time
 import signal
+import socket
+import httplib
 import numbers
 import argparse
 import subprocess
@@ -161,9 +163,16 @@ def main():
     prune_history(history, args.history_length - 1, args.frequency, now=now)
 
     # ping and get status
-    result = ping(args.server, method=args.method, timeout=args.timeout)
+    if args.method == 'httplib':
+      (result, expected) = ping_and_check(timeout=args.timeout)
+    else:
+      result = ping(args.server, method=args.method, timeout=args.timeout)
+      expected = True
     if result:
-      status = 'up'
+      if expected:
+        status = 'up'
+      else:
+        status = 'intercepted'
     else:
       status = 'down'
     history.append((now, status))
@@ -267,17 +276,20 @@ def check_config(args, old_args=None):
 
 def get_history(history_file, history_length):
   """Parse history file, return it in a list of (timestamp, status) tuples.
-  "timestamp" is an int and "status" is either "up" or "down". Lines which don't
-  conform to "timestamp\tstatus" are skipped. If the file does not exist or is
-  empty, an empty list is returned. The list is in the same order as the lines
-  in the file."""
+  "timestamp" is an int and "status" is "up", "down", or "intercepted". Lines
+  which don't conform to "timestamp\tstatus" are skipped. If the file does not
+  exist or is empty, an empty list is returned. The list is in the same order
+  as the lines in the file."""
   history = []
   with open(history_file, 'rU') as file_handle:
     for line in file_handle:
-      fields = line.strip().split('\t')
       try:
-        history.append((int(fields[0]), fields[1]))
-      except (ValueError, IndexError):
+        (timestamp, status) = line.strip().split('\t')
+      except ValueError:
+        continue
+      try:
+        history.append((int(timestamp), status))
+      except ValueError:
         continue
   return history
 
@@ -350,12 +362,33 @@ def parse_curl(curl_str):
     return 0.0
 
 
+def ping_and_check(timeout=2):
+  """Return (float, bool): latency in ms and whether the response was as expected."""
+  conex = httplib.HTTPConnection('www.gstatic.com', timeout=timeout)
+  try:
+    conex.request('GET', '/generate_204')
+  except socket.gaierror:
+    return (0.0, None)
+  #TODO: Check what measurement point gets the most accurate time.
+  #      Maybe break .request() into the four methods described here:
+  #      https://docs.python.org/2/library/httplib.html#httplib.HTTPConnection.putrequest
+  before = time.time()
+  response = conex.getresponse()
+  after = time.time()
+  elapsed = 1000 * (after - before)
+  if response.status == 204 and response.read(1024) == '':
+    expected = True
+  else:
+    expected = False
+  return (elapsed, expected)
+
+
 def write_history(history_file, history):
   """Write the current history data structure to the history file.
   See get_history() for the format of the "history" data structure."""
   with open(history_file, 'w') as filehandle:
-    for line in history:
-      filehandle.write("{}\t{}\n".format(line[0], line[1]))
+    for (timestamp, status) in history:
+      filehandle.write("{}\t{}\n".format(timestamp, status))
 
 
 def log(logfile, result, now, method=None):
@@ -391,15 +424,20 @@ def format_value(raw):
 def status_format(history, history_length):
   """Create a human-readable status display string out of the recent history."""
   status_str = u'['
-  for line in history:
-    if line[1] == 'up':
+  for (timestamp, status) in history:
+    if status == 'up':
       status_str += u' \u2022'
       # status_str += u'\u26AB' # medium bullet
     else:
-      # add a space to left of a run of o's, for aesthetics
+      # add a space to left of a run of o's or !'s, for aesthetics
       if status_str[-1] == u'[' or status_str[-1] == u'\u2022':
         status_str += u' '
-      status_str += u'o'
+      if status == 'down':
+        status_str += u'o'
+      elif status == 'intercepted':
+        status_str += u'!'
+      else:
+        status_str += u'?'
   status_str += u' ]'
   return status_str
 
