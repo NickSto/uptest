@@ -8,7 +8,7 @@
 #      Use http://www.gstatic.com/generate_204 for this by default.
 #      See Google Chrome's methods for detecting interception:
 #      http://www.chromium.org/chromium-os/chromiumos-design-docs/network-portal-detection
-#TODO: Try using httplib directly instead of curl
+#TODO: Try using httplib directly instead of curl (or requests module?)
 #TODO: Maybe an algorithm to automatically switch to curl if there's a streak of
 #      failed pings (so no manual intervention is needed)
 from __future__ import division
@@ -18,6 +18,7 @@ import sys
 import copy
 import time
 import signal
+import numbers
 import argparse
 import subprocess
 import ConfigParser
@@ -25,6 +26,7 @@ import ipwraplib
 
 OPT_DEFAULTS = {'server':'google.com', 'history_length':5, 'frequency':5,
   'timeout':2, 'method':'ping'}
+#TODO: Just put these next to each argument definition in main().
 OPT_TYPES = {'server':str, 'history_length':int, 'frequency':int, 'timeout':int,
   'method':str, 'logfile':os.path.abspath, 'data_dir':os.path.abspath}
 # USAGE = "%(prog)s [options]"
@@ -96,6 +98,7 @@ def main():
   (history_file, status_file, config_file) = make_paths(args.data_dir)
 
   # write settings to config file
+  #TODO: Check if config already exists, and if an instance is already running.
   config = ConfigParser.RawConfigParser()
   set_config_args(config, args)
   write_config(config, config_file)
@@ -136,7 +139,7 @@ def main():
       if config.has_option('meta', 'die'):
         invalidate_and_exit()
     except ConfigParser.Error:
-      # keeping the process up is secondary to changing settings on the fly
+      # keeping the process up takes precedence over changing settings on the fly
       pass
     (history_file, status_file, config_file) = make_paths(args.data_dir)
     # update config file with new settings
@@ -167,7 +170,7 @@ def main():
 
     # log result
     if args.logfile:
-      log(args.logfile, result, now)
+      log(args.logfile, result, now, method=args.method)
 
     # write new history back to file
     if os.path.exists(history_file) and not os.path.isfile(history_file):
@@ -355,7 +358,7 @@ def write_history(history_file, history):
       filehandle.write("{}\t{}\n".format(line[0], line[1]))
 
 
-def log(logfile, result, now):
+def log(logfile, result, now, method=None):
   """Log the result of the ping to the given log file.
   Writes the ping milliseconds ("result"), current timestamp ("now"), wifi SSID,
   and wifi MAC address as separate columns in a line appended to the file.
@@ -367,17 +370,22 @@ def log(logfile, result, now):
   if wifi_interface != active_interface:
     ssid = ''
     mac = ipwraplib.get_mac_from_ip(default_route)
-    if mac is None:
-      mac = ''
-  if ssid is None:
-    ssid = ''
-  if mac is None:
-    mac = ''
+  columns = [result, now, ssid, mac, method]
+  line = "\t".join(map(format_value, columns))+'\n'
   with open(logfile, 'a') as filehandle:
-    if result == 0 or result >= 100:
-      filehandle.write("{:d}\t{:d}\t{}\t{}\n".format(int(result), now, ssid, mac))
-    else:
-      filehandle.write("{:.1f}\t{:d}\t{}\t{}\n".format(result, now, ssid, mac))
+    filehandle.write(line)
+
+
+def format_value(raw):
+  """Format a data value for entry into the log file.
+  Values are converted to strings, except None, which becomes ''."""
+  value = raw
+  if isinstance(value, numbers.Number) and (value == 0 or value >= 100):
+    value = int(value)
+  if value is None:
+    return ''
+  else:
+    return str(value)
 
 
 def status_format(history, history_length):
