@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 # Testing how well ping and curl latency correlates.
 # So far, the relationship is linear, following curl = ping*1.0366 - 6.5
-# awkt 'BEGIN {tol=15; a1=-6.5; b1=1.0366; a2=4; b2=1} {total++; y1=$1*b1+a1; y2=$1*b2+a2} (y1 < $2+tol && y1 > $2-tol) || (y2 < $2+tol && y2 > $2-tol) {pass++} END {print pass, total, 100*pass/total}' curlping.log
+# awkt 'BEGIN {tol=15; a1=-6.5; b1=1.0366; a2=4; b2=1}
+#   {total++; y1=$1*b1+a1; y2=$1*b2+a2}
+#   (y1 < $2+tol && y1 > $2-tol) || (y2 < $2+tol && y2 > $2-tol) {pass++}
+#   END {print pass, total, 100*pass/total}
+# ' curlping.log
 
 DATA_DIR="$HOME/.local/share/nbsdata"
 SILENCE="$DATA_DIR/SILENCE"
@@ -23,6 +27,10 @@ function main {
   echo -n > ~/tmp/httplib.txt
   lan_ip=''
   while true; do
+    if [[ -e "$SILENCE" ]]; then
+      sleep "$SLEEPTIME"
+      continue
+    fi
     # Get info about current connection.
     interface=$(ip route show | sed -En 's/^default .* dev ([a-zA-Z0-9:_-]+) .*$/\1/p')
     lan_ip_current=$(dev_ip $interface)
@@ -30,19 +38,21 @@ function main {
       lan_ip="$lan_ip_current"
       asn=$(get_asn "$lan_ip")
     fi
-    # Collect data from last ping.
+    # Collect data from last pings.
     ping_time=$(cat ~/tmp/ping.txt)
     curl_time=$(cat ~/tmp/curl.txt)
     httplib_time=$(cat ~/tmp/httplib.txt)
     if [[ $ping_time ]] && [[ $curl_time ]] && [[ $httplib_time ]]; then
       echo -e "$ping_time\t$curl_time\t$httplib_time\t$asn\t$interface"
     fi
+    # Perform the pings.
     echo -n > ~/tmp/ping.txt
     echo -n > ~/tmp/curl.txt
     echo -n > ~/tmp/httplib.txt
     ping_wrap $SERVER > ~/tmp/ping.txt &
     curl_wrap $SERVER > ~/tmp/curl.txt &
     $scriptdir/httplib-ping.py > ~/tmp/httplib.txt &
+    # Sleep.
     sleep $SLEEPTIME
   done
 }
