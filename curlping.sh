@@ -7,32 +7,55 @@ DATA_DIR="$HOME/.local/share/nbsdata"
 SILENCE="$DATA_DIR/SILENCE"
 ASN_CACHE="$DATA_DIR/asn-cache.tsv"
 SLEEPTIME=5 #seconds
-SERVER='nsto.co'
-CURLPATH='/misc/access.txt'
+SERVER='www.gstatic.com'
 
 function main {
-  echo -n > /tmp/ping.txt
-  echo -n > /tmp/curl.txt
+  # Get script directory.
+  if readlink -f dummy >/dev/null 2>/dev/null; then
+    scriptdir=$(dirname $(readlink -f ${BASH_SOURCE[0]}))
+  else
+    echo "Error: readlink command required." >&2
+    exit 1
+  fi
+
+  echo -n > ~/tmp/ping.txt
+  echo -n > ~/tmp/curl.txt
+  echo -n > ~/tmp/httplib.txt
   lan_ip=''
   while true; do
-    pingms=$(cat /tmp/ping.txt)
-    curls=$(cat /tmp/curl.txt)
+    # Get info about current connection.
     interface=$(ip route show | sed -En 's/^default .* dev ([a-zA-Z0-9:_-]+) .*$/\1/p')
     lan_ip_current=$(dev_ip $interface)
     if [[ $lan_ip != $lan_ip_current ]]; then
       lan_ip="$lan_ip_current"
       asn=$(get_asn "$lan_ip")
     fi
-    if [[ $pingms ]] && [[ $curls ]]; then
-      curlms=$(echo "$curls*1000" | bc)
-      echo -e "$pingms\t$curlms\t$asn\t$interface"
+    # Collect data from last ping.
+    ping_time=$(cat ~/tmp/ping.txt)
+    curl_time=$(cat ~/tmp/curl.txt)
+    httplib_time=$(cat ~/tmp/httplib.txt)
+    if [[ $ping_time ]] && [[ $curl_time ]] && [[ $httplib_time ]]; then
+      echo -e "$ping_time\t$curl_time\t$httplib_time\t$asn\t$interface"
     fi
-    echo -n > /tmp/ping.txt
-    echo -n > /tmp/curl.txt
-    ping -n -c 1 $SERVER | sed -En 's/^.* bytes from .* time=([0-9.]+) ?ms.*$/\1/p' > /tmp/ping.txt &
-    curl -s --write-out '%{time_connect}\n' --output /dev/null $SERVER$CURLPATH > /tmp/curl.txt &
+    echo -n > ~/tmp/ping.txt
+    echo -n > ~/tmp/curl.txt
+    echo -n > ~/tmp/httplib.txt
+    ping_wrap $SERVER > ~/tmp/ping.txt &
+    curl_wrap $SERVER > ~/tmp/curl.txt &
+    $scriptdir/httplib-ping.py > ~/tmp/httplib.txt &
     sleep $SLEEPTIME
   done
+}
+
+function ping_wrap {
+  server="$1"
+  ping -n -c 1 $server | sed -En 's/^.* bytes from .* time=([0-9.]+) ?ms.*$/\1/p'
+}
+
+function curl_wrap {
+  server="$1"
+  sec=$(curl -s --write-out '%{time_connect}\n' --output /dev/null $server)
+  echo "$sec*1000" | bc
 }
 
 function dev_ip {
@@ -54,14 +77,16 @@ function dev_ip {
 
 function get_asn {
   wan_ip=$(curl -s ipv4.icanhazip.com)
-  asn=$(awk -F '\t' '$1 == "'$wan_ip'" {print $2}' $ASN_CACHE | head -n 1)
-  if [[ ! $asn ]]; then
-    asn=$(curl -s http://ipinfo.io/$wan_ip/org | grep -Eo '^AS[0-9]+')
-    if [[ $asn ]]; then
-      echo -e "$wan_ip\t$asn" >> $ASN_CACHE
+  if [[ $wan_ip ]]; then
+    asn=$(awk -F '\t' '$1 == "'$wan_ip'" {print $2}' $ASN_CACHE | head -n 1)
+    if [[ ! $asn ]]; then
+      asn=$(curl -s http://ipinfo.io/$wan_ip/org | grep -Eo '^AS[0-9]+')
+      if [[ $asn ]]; then
+        echo -e "$wan_ip\t$asn" >> $ASN_CACHE
+      fi
     fi
+    echo $asn
   fi
-  echo $asn
 }
 
 main "$@"
