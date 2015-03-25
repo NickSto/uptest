@@ -67,9 +67,9 @@ def main():
     type=OPT_TYPES['history_length'],
     help='The number of previous ping tests to keep track of and display. '
      'Default: %(default)s')
-  parser.add_argument('-c', '--curl', dest='method', action='store_const',
-    const='curl',
-    help='Use curl instead of ping as the connection test.')
+  parser.add_argument('-m', '--method', choices=('ping', 'curl', 'httplib'),
+    help='Select method to use for determining connection status, latency, and '
+      '(in the case of httplib) connection interception. Default: %(default)s')
   parser.add_argument('-t', '--timeout', type=OPT_TYPES['timeout'],
     help='Seconds to wait for a response to each ping. Cannot be greater than '
       '"frequency". Default: %(default)s')
@@ -257,9 +257,9 @@ def check_config(args, old_args=None):
     else:
       args.timeout = old_args.timeout
       args.frequency = old_args.frequency
-  if args.method not in ['ping', 'curl']:
+  if args.method not in ('ping', 'curl', 'httplib'):
     if old_args is None:
-      raise AssertionError('Ping method must be one of "ping" or "curl".')
+      raise AssertionError('Ping method must be one of "ping", "curl", or "httplib".')
     else:
       args.method = old_args.method
   if args.data_dir and not os.path.isdir(args.data_dir):
@@ -364,18 +364,24 @@ def parse_curl(curl_str):
 
 def ping_and_check(timeout=2):
   """Return (float, bool): latency in ms and whether the response was as expected."""
+  #TODO: Maybe go back to http://www.nsto.co/misc/access.txt
+  #      http://www.gstatic.com/generate_204 sometimes doesn't work.
+  #      I.e. on attwifi
   conex = httplib.HTTPConnection('www.gstatic.com', timeout=timeout)
   try:
     conex.request('GET', '/generate_204')
-  except socket.gaierror:
+  except (socket.error, socket.gaierror):
     return (0.0, None)
   #TODO: Check what measurement point gets the most accurate time.
   #      Maybe break .request() into the four methods described here:
   #      https://docs.python.org/2/library/httplib.html#httplib.HTTPConnection.putrequest
   before = time.time()
-  response = conex.getresponse()
+  try:
+    response = conex.getresponse()
+  except socket.timeout:
+    return (0.0, None)
   after = time.time()
-  elapsed = 1000 * (after - before)
+  elapsed = round(1000 * (after - before), 1)
   if response.status == 204 and response.read(1024) == '':
     expected = True
   else:
@@ -428,16 +434,14 @@ def status_format(history, history_length):
     if status == 'up':
       status_str += u' \u2022'
       # status_str += u'\u26AB' # medium bullet
+    elif status == 'intercepted':
+      status_str += u' !'
     else:
-      # add a space to left of a run of o's or !'s, for aesthetics
+      # add a space to left of a run of o's, for aesthetics
       if status_str[-1] == u'[' or status_str[-1] == u'\u2022':
         status_str += u' '
       if status == 'down':
         status_str += u'o'
-      elif status == 'intercepted':
-        status_str += u'!'
-      else:
-        status_str += u'?'
   status_str += u' ]'
   return status_str
 
