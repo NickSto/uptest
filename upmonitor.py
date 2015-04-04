@@ -4,11 +4,7 @@
 #      doesn't "obey" the -W timeout, getting stuck in a DNS lookup.
 #      Seems the only way to resolve this situation is to do the DNS yourself
 #      and give ping an actual ip address.
-#TODO: When using curl, show a third status: "!" when page is intercepted.
-#      Use http://www.gstatic.com/generate_204 for this by default.
-#      See Google Chrome's methods for detecting interception:
-#      http://www.chromium.org/chromium-os/chromiumos-design-docs/network-portal-detection
-#TODO: Try using httplib directly instead of curl (or requests module?)
+#TODO: Try requests library instead of httplib (can be packaged with the code)
 #TODO: Maybe an algorithm to automatically switch to curl if there's a streak of
 #      failed pings (so no manual intervention is needed)
 from __future__ import division
@@ -364,24 +360,32 @@ def parse_curl(curl_str):
 
 def ping_and_check(timeout=2):
   """Return (float, bool): latency in ms and whether the response was as expected."""
+  # See Google Chrome's methods for captive portal detection:
+  # http://www.chromium.org/chromium-os/chromiumos-design-docs/network-portal-detection
   #TODO: Maybe go back to http://www.nsto.co/misc/access.txt
   #      http://www.gstatic.com/generate_204 sometimes doesn't work.
   #      I.e. on attwifi
   conex = httplib.HTTPConnection('www.gstatic.com', timeout=timeout)
-  try:
-    conex.request('GET', '/generate_204')
-  except (socket.error, socket.gaierror):
-    return (0.0, None)
-  #TODO: Check what measurement point gets the most accurate time.
-  #      Maybe break .request() into the four methods described here:
-  #      https://docs.python.org/2/library/httplib.html#httplib.HTTPConnection.putrequest
+  # .connect() just establishes the TCP connection with a SYN, SYN/ACK, ACK handshake, returning
+  # after the final ACK is sent. This is essentially immediately after the SYN/ACK arrives, making
+  # it a good measure of a single round trip. The only exception is when a DNS request has to be
+  # made first because the IP is no longer in the cache.
   before = time.time()
   try:
-    response = conex.getresponse()
-  except socket.timeout:
+    conex.connect()
+  except (httplib.HTTPException, socket.error):
     return (0.0, None)
   after = time.time()
   elapsed = round(1000 * (after - before), 1)
+  try:
+    conex.request('GET', '/generate_204')
+  except (httplib.HTTPException, socket.error):
+    return (elapsed, None)
+  try:
+    response = conex.getresponse()
+  except (httplib.HTTPException, socket.error):
+    return (elapsed, None)
+  conex.close()
   if response.status == 204 and response.read(1024) == '':
     expected = True
   else:
