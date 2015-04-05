@@ -23,12 +23,18 @@ import subprocess
 import ConfigParser
 import ipwraplib
 
+DATA_DIR_DEFAULT = '.local/share/nbsdata'
+SILENCE_FILENAME = 'SILENCE'
+HISTORY_FILENAME = 'uphistory.txt'
+STATUS_FILENAME = 'upstatus.txt'
+CONFIG_FILENAME = 'upmonitor.cfg'
+SHUTDOWN_STATUS = '[OFFLINE]'
+
 OPT_DEFAULTS = {'server':'google.com', 'history_length':5, 'frequency':5,
   'timeout':2, 'method':'ping'}
 # Needed to cast the values coming from the config file.
 OPT_TYPES = {'server':str, 'history_length':int, 'frequency':int, 'timeout':int,
   'method':str, 'logfile':os.path.abspath, 'data_dir':os.path.abspath}
-# USAGE = "%(prog)s [options]"
 DESCRIPTION = """Track and summarize the recent history of connectivity by
 pinging an external server. Can print a textual summary figure to stdout or to
 a file, which can be read and displayed by utilities like indicator-sysmonitor.
@@ -36,20 +42,12 @@ This allows visual monitoring of real, current connectivity. The status display
 looks something like "[*oo**]", showing the results of the most recent five
 pings (newest on the right). *'s indicate successful pings and o's are dropped
 pings. All command-line options can be changed without interrupting the running
-process by editing upmonitor.cfg. Any invalid settings will be ignored, however.
-"""
-EPILOG = """"""
-
-DATA_DIRNAME = '.local/share/nbsdata'
-SILENCE_FILENAME = 'SILENCE'
-HISTORY_FILENAME = 'uphistory.txt'
-STATUS_FILENAME = 'upstatus.txt'
-CONFIG_FILENAME = 'upmonitor.cfg'
-SHUTDOWN_STATUS = '[OFFLINE]'
+process by editing ~/"""+DATA_DIR_DEFAULT+'/'+CONFIG_FILENAME+""". Any invalid
+settings will be ignored."""
 
 def main():
 
-  parser = argparse.ArgumentParser(description=DESCRIPTION, epilog=EPILOG)
+  parser = argparse.ArgumentParser(description=DESCRIPTION)
   parser.set_defaults(**OPT_DEFAULTS)
   OPT_TYPES['stdout'] = tobool
 
@@ -85,15 +83,14 @@ def main():
     help='The directory where data will be stored. History data will be kept '
       'in DIRNAME/'+HISTORY_FILENAME+', the status summary will be in '
       'DIRNAME/'+STATUS_FILENAME+', and configuration settings will be written '
-      'to DIRNAME/'+CONFIG_FILENAME+'. Default: a directory named'+DATA_DIRNAME
-      +' in the user\'s home directory.')
+      'to DIRNAME/'+CONFIG_FILENAME+'. Default: ~/'+DATA_DIR_DEFAULT)
 
   args = parser.parse_args()
   check_config(args)
 
   # Determine file paths.
   home_dir = os.path.expanduser('~')
-  silence_file = os.path.join(home_dir, DATA_DIRNAME, SILENCE_FILENAME)
+  silence_file = os.path.join(home_dir, DATA_DIR_DEFAULT, SILENCE_FILENAME)
   (history_file, status_file, config_file) = make_paths(args.data_dir)
 
   # Exit if an instance is already running.
@@ -171,9 +168,9 @@ def main():
       (result, expected) = ping_and_check(timeout=args.timeout)
     else:
       result = ping(args.server, method=args.method, timeout=args.timeout)
-      expected = True
+      expected = None
     if result:
-      if expected:
+      if expected or expected is None:
         status = 'up'
       else:
         status = 'intercepted'
@@ -206,11 +203,11 @@ def main():
 def make_paths(data_dir):
   """Create the the data_dir directory and return full paths to its files.
   Give args.data_dir as the argument. If args.data_dir is false, the data_dir
-  will be DATA_DIRNAME in the user's home directory.
+  will be DATA_DIR_DEFAULT in the user's home directory.
   Returns (history_file, status_file, config_file)."""
   home_dir = os.path.expanduser('~')
   if not data_dir:
-    data_dir = os.path.join(home_dir, DATA_DIRNAME)
+    data_dir = os.path.join(home_dir, DATA_DIR_DEFAULT)
   if not os.path.exists(data_dir):
     os.makedirs(data_dir)
   history_file = os.path.join(data_dir, HISTORY_FILENAME)
