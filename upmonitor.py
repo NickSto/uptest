@@ -358,14 +358,21 @@ def parse_curl(curl_str):
     return 0.0
 
 
-def ping_and_check(timeout=2):
-  """Return (float, bool): latency in ms and whether the response was as expected."""
+def ping_and_check(server='www.gstatic.com', path='/generate_204', status=204, body='', timeout=2):
+  """"Ping" a server with an HTTP GET request, returning the latency and whether the response was
+  as expected (whether the connection was intercepted by a captive portal). The latency is
+  determined from the TCP handshake, so it should be a single round trip.
+  The captive portal detection is done by comparing the response status and body to those provided
+  to the function. N.B.: Only the first 1024 bytes of the response are used.
+  Return (float, bool): latency in ms and whether the response was as expected. If no connection
+  can be established, returns (0.0, None). If an error is encountered at any point, returns None for
+  the second value."""
   # See Google Chrome's methods for captive portal detection:
   # http://www.chromium.org/chromium-os/chromiumos-design-docs/network-portal-detection
   #TODO: Maybe go back to http://www.nsto.co/misc/access.txt
   #      http://www.gstatic.com/generate_204 sometimes doesn't work.
   #      I.e. on attwifi
-  conex = httplib.HTTPConnection('www.gstatic.com', timeout=timeout)
+  conex = httplib.HTTPConnection(server, timeout=timeout)
   # .connect() just establishes the TCP connection with a SYN, SYN/ACK, ACK handshake, returning
   # after the final ACK is sent. This is essentially immediately after the SYN/ACK arrives, making
   # it a good measure of a single round trip. The only exception is when a DNS request has to be
@@ -378,7 +385,7 @@ def ping_and_check(timeout=2):
   after = time.time()
   elapsed = round(1000 * (after - before), 1)
   try:
-    conex.request('GET', '/generate_204')
+    conex.request('GET', path)
   except (httplib.HTTPException, socket.error):
     return (elapsed, None)
   try:
@@ -386,7 +393,7 @@ def ping_and_check(timeout=2):
   except (httplib.HTTPException, socket.error):
     return (elapsed, None)
   conex.close()
-  if response.status == 204 and response.read(1024) == '':
+  if response.status == status and response.read(1024) == body[:1024]:
     expected = True
   else:
     expected = False
