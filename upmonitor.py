@@ -1,12 +1,11 @@
 #!/usr/bin/env python
-#TODO: When your packets are all being dropped, but you have an interface that's
-#      "connected" (think a wifi router with no internet connection), ping
-#      doesn't "obey" the -W timeout, getting stuck in a DNS lookup.
-#      Seems the only way to resolve this situation is to do the DNS yourself
-#      and give ping an actual ip address.
-#TODO: Try requests library instead of httplib (can be packaged with the code)
-#TODO: Maybe an algorithm to automatically switch to curl if there's a streak of
-#      failed pings (so no manual intervention is needed)
+#TODO: When your packets are all being dropped, but you have an interface that's "connected" (think
+#      a wifi router with no internet connection), ping doesn't "obey" the -W timeout, getting stuck
+#      in a DNS lookup. Seems the only way to resolve this situation is to do the DNS yourself and
+#      give ping an actual ip address.
+#TODO: Try requests library instead of httplib (can be packaged with the code).
+#TODO: Maybe an algorithm to automatically switch to curl if there's a streak of failed pings (so no
+#      manual intervention is needed).
 from __future__ import division
 import re
 import os
@@ -30,20 +29,18 @@ STATUS_FILENAME = 'upstatus.txt'
 CONFIG_FILENAME = 'upmonitor.cfg'
 SHUTDOWN_STATUS = '[OFFLINE]'
 
-OPT_DEFAULTS = {'server':'google.com', 'history_length':5, 'frequency':5,
-  'timeout':2, 'method':'ping'}
+OPT_DEFAULTS = {'server':'google.com', 'history_length':5, 'frequency':5, 'timeout':2,
+                'method':'ping'}
 # Needed to cast the values coming from the config file.
-OPT_TYPES = {'server':str, 'history_length':int, 'frequency':int, 'timeout':int,
-  'method':str, 'logfile':os.path.abspath, 'data_dir':os.path.abspath}
-DESCRIPTION = """Track and summarize the recent history of connectivity by
-pinging an external server. Can print a textual summary figure to stdout or to
-a file, which can be read and displayed by utilities like indicator-sysmonitor.
-This allows visual monitoring of real, current connectivity. The status display
-looks something like "[*oo**]", showing the results of the most recent five
-pings (newest on the right). *'s indicate successful pings and o's are dropped
-pings. All command-line options can be changed without interrupting the running
-process by editing ~/"""+DATA_DIR_DEFAULT+'/'+CONFIG_FILENAME+""". Any invalid
-settings will be ignored."""
+OPT_TYPES = {'server':str, 'history_length':int, 'frequency':int, 'timeout':int, 'method':str,
+             'logfile':os.path.abspath, 'data_dir':os.path.abspath}
+DESCRIPTION = """Track and summarize the recent history of connectivity by pinging an external
+server. Can print a textual summary figure to stdout or to a file, which can be read and displayed
+by utilities like indicator-sysmonitor. This allows visual monitoring of real, current connectivity.
+The status display looks something like "[*oo**]", showing the results of the most recent five pings
+(newest on the right). *'s indicate successful pings and o's are dropped pings. All command-line
+options can be changed without interrupting the running process by editing
+~/"""+DATA_DIR_DEFAULT+'/'+CONFIG_FILENAME+""". Any invalid settings will be ignored."""
 
 def main():
 
@@ -56,34 +53,29 @@ def main():
   parser.add_argument('-o', '--stdout', action='store_true',
     help='Print status summary to stdout instead of a file.')
   parser.add_argument('-f', '--frequency', type=OPT_TYPES['frequency'],
-    help='How frequently to test the connection. Give the interval time in '
-      'seconds. Default: %(default)s')
-  parser.add_argument('-l', '--history-length', metavar='LENGTH',
-    type=OPT_TYPES['history_length'],
-    help='The number of previous ping tests to keep track of and display. '
-     'Default: %(default)s')
+    help='How frequently to test the connection. Give the interval time in seconds. Default: '
+         '%(default)s')
+  parser.add_argument('-l', '--history-length', metavar='LENGTH', type=OPT_TYPES['history_length'],
+    help='The number of previous ping tests to keep track of and display. Default: %(default)s')
   parser.add_argument('-m', '--method', choices=('ping', 'curl', 'httplib'),
-    help='Select method to use for determining connection status, latency, and '
-      '(in the case of httplib) connection interception. Default: %(default)s')
+    help='Select method to use for determining connection status, latency, and (in the case of '
+         'httplib) connection interception. Default: %(default)s')
   parser.add_argument('-t', '--timeout', type=OPT_TYPES['timeout'],
-    help='Seconds to wait for a response to each ping. Cannot be greater than '
-      '"frequency". Default: %(default)s')
+    help='Seconds to wait for a response to each ping. Cannot be greater than "frequency". '
+         'Default: %(default)s')
   parser.add_argument('-L', '--logfile', type=OPT_TYPES['logfile'],
-    help='Give a file to log ping history to. Will record the ping latency, '
-      'the time, and if possible, the wifi SSID and MAC address (using the '
-      '"iwconfig" command). These will be in 4 tab-delimited columns, one line '
-      'per ping. This file can be tracked in real-time with upview.py. N.B.: '
-      'If you aren\'t connected to wifi, the SSID and MAC address fields will '
-      'be empty (but present). If you\'re connected, but the pings aren\'t '
-      'going through the wifi connection, the SSID will be empty but the MAC '
-      'will be the address of whatever device you\'re actually using (like '
-      'an Ethernet switch).')
-  parser.add_argument('-d', '--data-dir', metavar='DIRNAME',
-    type=OPT_TYPES['data_dir'],
-    help='The directory where data will be stored. History data will be kept '
-      'in DIRNAME/'+HISTORY_FILENAME+', the status summary will be in '
-      'DIRNAME/'+STATUS_FILENAME+', and configuration settings will be written '
-      'to DIRNAME/'+CONFIG_FILENAME+'. Default: ~/'+DATA_DIR_DEFAULT)
+    help='Give a file to log ping history to. Will record the ping latency, the time, and if '
+         'possible, the wifi SSID and MAC address (using the iwconfig" command). These will be in '
+         '4 tab-delimited columns, one line per ping. This file can be tracked in real-time with '
+         'upview.py. N.B.: If you aren\'t connected to wifi, the SSID and MAC address fields will '
+         'be empty (but present). If you\'re connected, but the pings aren\'t going through the '
+         'wifi connection, the SSID will be empty but the MAC will be the address of whatever '
+         'device you\'re actually using (like an Ethernet switch).')
+  parser.add_argument('-d', '--data-dir', metavar='DIRNAME', type=OPT_TYPES['data_dir'],
+    help='The directory where data will be stored. History data will be kept in DIRNAME/'
+         +HISTORY_FILENAME+', the status summary will be in DIRNAME/'+STATUS_FILENAME+', and '
+         'configuration settings will be written to DIRNAME/'+CONFIG_FILENAME+'. Default: ~/'
+         +DATA_DIR_DEFAULT)
 
   args = parser.parse_args()
   check_config(args)
@@ -217,8 +209,10 @@ def make_paths(data_dir):
 
 
 def is_running(config_file):
-  """Determine if a process is already running by reading its pid from a config file.
-  Returns the pid if the process is running, False if it isn't, and None if it can't tell."""
+  """Determine if an instance is already running by reading its pid from a
+  config file.
+  Returns the pid (an int) if the process is running, False if it isn't, and
+  None if it can't tell."""
   config = ConfigParser.RawConfigParser()
   config.read(config_file)
   if config.has_option('meta', 'pid'):
@@ -335,7 +329,7 @@ def prune_history(history, past_points, frequency, now=None):
   for the format of the "history" data structure."""
   if now is None:
     now = int(time.time())
-  cutoff = now - (frequency * past_points) - 2 # 2 second fudge factor
+  cutoff = now - (frequency * past_points) - 2  # 2 second fudge factor
   history[:] = [line for line in history if line[0] >= cutoff]
   return history
 
@@ -351,8 +345,8 @@ def ping(server, method='ping', timeout=2):
   if method == 'ping':
     command = ['ping', '-n', '-c', '1', '-W', str(timeout), server]
   elif method == 'curl':
-    command = ['curl', '-s', '--output', '/dev/null', '--write-out',
-      r'%{time_connect}', '--connect-timeout', str(timeout), server]
+    command = ['curl', '-s', '--output', '/dev/null', '--write-out', r'%{time_connect}',
+               '--connect-timeout', str(timeout), server]
   # Call command.
   try:
     output = subprocess.check_output(command, stderr=devnull)
@@ -397,14 +391,16 @@ def parse_curl(curl_str):
 
 
 def ping_and_check(server='www.gstatic.com', path='/generate_204', status=204, body='', timeout=2):
-  """"Ping" a server with an HTTP GET request, returning the latency and whether the response was
-  as expected (whether the connection was intercepted by a captive portal). The latency is
-  determined from the TCP handshake, so it should be a single round trip.
-  The captive portal detection is done by comparing the response status and body to those provided
-  to the function. N.B.: Only the first 1024 bytes of the response are used.
-  Return (float, bool): latency in ms and whether the response was as expected. If no connection
-  can be established, returns (0.0, None). If an error is encountered at any point, returns None for
-  the second value."""
+  """"Ping" a server with an HTTP GET request, returning the latency and whether
+  the response was as expected (whether the connection was intercepted by a
+  captive portal).
+  The latency is determined from the TCP handshake, so it should be a single
+  round trip. The captive portal detection is done by comparing the response
+  status and body to those provided to the function. N.B.: Only the first 1024
+  bytes of the response are used.
+  Returns (float, bool): latency in ms and whether the response was as expected.
+  If no connection can be established, returns (0.0, None). If an error is
+  encountered at any point, returns None for the second value."""
   # See Google Chrome's methods for captive portal detection:
   # http://www.chromium.org/chromium-os/chromiumos-design-docs/network-portal-detection
   #TODO: Maybe go back to http://www.nsto.co/misc/access.txt
@@ -506,8 +502,7 @@ def sleep(target, delay=5, precision=0.1):
   if precision <= 0:
     raise ValueError('Sleep precision must be greater than zero.')
   now = int(time.time())
-  # If now already past the target, increase target in multiples of delay until
-  # it's just under now.
+  # If now already past the target, increase target in multiples of delay until it's just under now.
   if now > target:
     target += delay * ((now - target) // delay)
   while now < target:
