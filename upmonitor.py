@@ -13,6 +13,7 @@ import os
 import sys
 import copy
 import time
+import errno
 import signal
 import socket
 import httplib
@@ -24,7 +25,7 @@ import ipwraplib
 
 OPT_DEFAULTS = {'server':'google.com', 'history_length':5, 'frequency':5,
   'timeout':2, 'method':'ping'}
-#TODO: Just put these next to each argument definition in main().
+# Needed to cast the values coming from the config file.
 OPT_TYPES = {'server':str, 'history_length':int, 'frequency':int, 'timeout':int,
   'method':str, 'logfile':os.path.abspath, 'data_dir':os.path.abspath}
 # USAGE = "%(prog)s [options]"
@@ -84,41 +85,47 @@ def main():
     help='The directory where data will be stored. History data will be kept '
       'in DIRNAME/'+HISTORY_FILENAME+', the status summary will be in '
       'DIRNAME/'+STATUS_FILENAME+', and configuration settings will be written '
-      'to DIRNAME/'+CONFIG_FILENAME+'. Default: a directory named '+DATA_DIRNAME
+      'to DIRNAME/'+CONFIG_FILENAME+'. Default: a directory named'+DATA_DIRNAME
       +' in the user\'s home directory.')
 
   args = parser.parse_args()
   check_config(args)
 
-  # determine file paths
+  # Determine file paths.
   home_dir = os.path.expanduser('~')
   silence_file = os.path.join(home_dir, DATA_DIRNAME, SILENCE_FILENAME)
   (history_file, status_file, config_file) = make_paths(args.data_dir)
 
-  # write settings to config file
-  #TODO: Check if config already exists, and if an instance is already running.
-  config = ConfigParser.RawConfigParser()
-  set_config_args(config, args)
-  write_config(config, config_file)
+  # Exit if an instance is already running.
+  if is_running(config_file):
+    pid = str(is_running(config_file))
+    sys.stderr.write('Error: an instance is already running at pid '+pid+'.\n')
+    sys.exit(1)
 
-  # attach signal handler to write special status on shutdown or exception
+  # Write settings to config file.
+  config = ConfigParser.RawConfigParser()
+  write_config(config_file, config, args)
+
+  # Attach signal handler to write special status on shutdown or exception.
+  # Define here to have access to have access to the status filename.
   def invalidate_status():
     with open(status_file, 'w') as filehandle:
       filehandle.write(SHUTDOWN_STATUS)
   def invalidate_and_exit(*args):
     invalidate_status()
+    os.remove(config_file)
     sys.exit()
-  # catch system signals
+  # Catch system signals.
   for signame in ['SIGINT', 'SIGHUP', 'SIGTERM', 'SIGQUIT']:
     sig = getattr(signal, signame)
     signal.signal(sig, invalidate_and_exit)
-  # catch exceptions
+  # Catch exceptions.
   def invalidate_and_reraise(type_, value, traceback):
     invalidate_status()
     sys.__excepthook__(type_, value, traceback)
   sys.excepthook = invalidate_and_reraise
 
-  # main loop
+  # Main loop.
   now = int(time.time())
   target = now + args.frequency
   while True:
@@ -127,38 +134,39 @@ def main():
       target = sleep(target, args.frequency)
       continue
 
-    # read in config file and update args with new settings
+    # Read in config file and update args with new settings.
     old_args = copy.deepcopy(args)
+    changed = False
     try:
       config = ConfigParser.RawConfigParser()
       config.read(config_file)
-      read_config_args(config, args)
+      changed = read_config_args(config, args)
       check_config(args, old_args)
-      if config.has_option('meta', 'die'):
+      if config.has_option('meta', 'die') and config.get('meta', 'die').lower() == 'true':
         invalidate_and_exit()
     except ConfigParser.Error:
-      # keeping the process up takes precedence over changing settings on the fly
+      # Keeping the process up takes precedence over changing settings on the fly.
       pass
     (history_file, status_file, config_file) = make_paths(args.data_dir)
-    # update config file with new settings
-    try:
-      config = ConfigParser.RawConfigParser()
-      set_config_args(config, args)
-      write_config(config, config_file)
-    except ConfigParser.Error:
-      pass
+    # Update config file with new settings.
+    if changed:
+      try:
+        config = ConfigParser.RawConfigParser()
+        write_config(config_file, config, args)
+      except ConfigParser.Error:
+        pass
 
-    # read in history from file
+    # Read in history from file.
     history = []
     if os.path.isfile(history_file):
       history = get_history(history_file, args.history_length)
     elif os.path.exists(history_file):
       fail('Error: history file "'+history_file+'" is a non-file.')
-    # remove outdated pings
+    # Remove outdated pings.
     now = int(time.time())
     prune_history(history, args.history_length - 1, args.frequency, now=now)
 
-    # ping and get status
+    # Ping and get status.
     if args.method == 'httplib':
       (result, expected) = ping_and_check(timeout=args.timeout)
     else:
@@ -173,16 +181,16 @@ def main():
       status = 'down'
     history.append((now, status))
 
-    # log result
+    # Log result.
     if args.logfile:
       log(args.logfile, result, now, method=args.method)
 
-    # write new history back to file
+    # Write new history back to file.
     if os.path.exists(history_file) and not os.path.isfile(history_file):
       fail('Error: history file "'+history_file+'" is a non-file.')
     write_history(history_file, history)
 
-    # write status stat to file (or stdout)
+    # Write status stat to file (or stdout).
     if os.path.exists(status_file) and not os.path.isfile(status_file):
       fail('Error: status file "'+status_file+'" is a non-file.')
     status_str = status_format(history, args.history_length)
@@ -211,35 +219,68 @@ def make_paths(data_dir):
   return (history_file, status_file, config_file)
 
 
-def set_config_args(config, args):
-  """Write settings (argparse args) to the 'args' section of the config file."""
+def is_running(config_file):
+  """Determine if a process is already running by reading its pid from a config file.
+  Returns the pid if the process is running, False if it isn't, and None if it can't tell."""
+  config = ConfigParser.RawConfigParser()
+  config.read(config_file)
+  if config.has_option('meta', 'pid'):
+    try:
+      pid = int(config.get('meta', 'pid'))
+    except ValueError:
+      return None
+    # Check if the process is running: try sending signal 0 to the process.
+    # If it's not running, an OSError will be raised with errno ESRCH (no such process).
+    try:
+      os.kill(pid, 0)
+      return pid
+    except OSError as ose:
+      if ose.errno == errno.ESRCH:
+        return False
+      else:
+        return None
+  else:
+    return None
+
+
+def write_config(config_file, config, args):
+  """Write settings to config_file.
+  All values in "args" will be written to the [args] section."""
+  # [meta] section
+  config.add_section('meta')
+  config.set('meta', 'pid', os.getpid())
+  config.set('meta', 'die', False)
+  # [args] section
   config.add_section('args')
   for arg in vars(args):
     value = getattr(args, arg)
     if value is not None:
       config.set('args', arg, getattr(args, arg))
-
-
-def write_config(config, config_file):
-  """Set the config sections that aren't 'args' and write to file."""
-  config.add_section('meta')
-  config.set('meta', 'pid', os.getpid())
+  # Write to file.
   with open(config_file, 'wb') as filehandle:
     config.write(filehandle)
 
 
 def read_config_args(config, args):
   """Read all arguments from config file and update args attributes with them.
-  If the [meta] "die" option is present, set args.die to True.
-  If there is any error reading the file, change nothing and return."""
+  If there is any error reading the file, change nothing and return.
+  Return True if there are changes to any argument value."""
+  changed = False
   for arg in config.options('args'):
-    # if the option exists, cast it to the proper type and set as args attr
+    # If the option exists, cast it to the proper type and set as args attr.
     if config.has_option('args', arg):
       cast = OPT_TYPES[arg]
       try:
-        setattr(args, arg, cast(config.get('args', arg)))
+        new_value = cast(config.get('args', arg))
       except ValueError:
-        pass
+        continue
+      try:
+        if new_value != getattr(args, arg):
+          setattr(args, arg, new_value)
+          changed = True
+      except AttributeError:
+        continue
+  return changed
 
 
 def check_config(args, old_args=None):
@@ -315,7 +356,7 @@ def ping(server, method='ping', timeout=2):
   elif method == 'curl':
     command = ['curl', '-s', '--output', '/dev/null', '--write-out',
       r'%{time_connect}', '--connect-timeout', str(timeout), server]
-  # call command
+  # Call command.
   try:
     output = subprocess.check_output(command, stderr=devnull)
     exit_status = 0
@@ -327,7 +368,7 @@ def ping(server, method='ping', timeout=2):
     exit_status = 1
   finally:
     devnull.close()
-  # parse output or return 0 on error
+  # Parse output or return 0.0 on error.
   if exit_status == 0:
     if method == 'ping':
       return parse_ping(output)
@@ -371,7 +412,7 @@ def ping_and_check(server='www.gstatic.com', path='/generate_204', status=204, b
   # http://www.chromium.org/chromium-os/chromiumos-design-docs/network-portal-detection
   #TODO: Maybe go back to http://www.nsto.co/misc/access.txt
   #      http://www.gstatic.com/generate_204 sometimes doesn't work.
-  #      I.e. on attwifi
+  #      i.e. on attwifi
   conex = httplib.HTTPConnection(server, timeout=timeout)
   # .connect() just establishes the TCP connection with a SYN, SYN/ACK, ACK handshake, returning
   # after the final ACK is sent. This is essentially immediately after the SYN/ACK arrives, making
@@ -448,7 +489,7 @@ def status_format(history, history_length):
     elif status == 'intercepted':
       status_str += u' !'
     else:
-      # add a space to left of a run of o's, for aesthetics
+      # Add a space to left of a run of o's, for aesthetics.
       if status_str[-1] == u'[' or status_str[-1] == u'\u2022':
         status_str += u' '
       if status == 'down':
