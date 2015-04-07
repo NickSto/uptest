@@ -1,11 +1,11 @@
 #!/usr/bin/env python
+#TODO: Try requests library instead of httplib (can be packaged with the code).
+#TODO: Maybe an algorithm to automatically switch to curl if there's a streak of failed pings (so no
+#      manual intervention is needed).
 #TODO: When your packets are all being dropped, but you have an interface that's "connected" (think
 #      a wifi router with no internet connection), ping doesn't "obey" the -W timeout, getting stuck
 #      in a DNS lookup. Seems the only way to resolve this situation is to do the DNS yourself and
 #      give ping an actual ip address.
-#TODO: Try requests library instead of httplib (can be packaged with the code).
-#TODO: Maybe an algorithm to automatically switch to curl if there's a streak of failed pings (so no
-#      manual intervention is needed).
 from __future__ import division
 import re
 import os
@@ -157,22 +157,22 @@ def main():
 
     # Ping and get status.
     if args.method == 'httplib':
-      (result, expected) = ping_and_check(timeout=args.timeout)
+      (result, intercepted) = ping_and_check(timeout=args.timeout)
     else:
       result = ping(args.server, method=args.method, timeout=args.timeout)
-      expected = None
+      intercepted = None
     if result:
-      if expected or expected is None:
-        status = 'up'
-      else:
+      if intercepted is True:
         status = 'intercepted'
+      else:
+        status = 'up'
     else:
       status = 'down'
     history.append((now, status))
 
     # Log result.
     if args.logfile:
-      log(args.logfile, result, now, method=args.method)
+      log(args.logfile, result, now, intercepted=intercepted, method=args.method)
 
     # Write new history back to file.
     if os.path.exists(history_file) and not os.path.isfile(history_file):
@@ -392,15 +392,17 @@ def parse_curl(curl_str):
 
 def ping_and_check(server='www.gstatic.com', path='/generate_204', status=204, body='', timeout=2):
   """"Ping" a server with an HTTP GET request, returning the latency and whether
-  the response was as expected (whether the connection was intercepted by a
-  captive portal).
+  the response appears to be intercepted (i.e. by a captive portal).
+  By default, uses http://www.gstatic.com/generate_204 and assumes interception
+  if the response code isn't 204 or the body isn't "". You can customize the
+  url and expected response with the respective parameters.
   The latency is determined from the TCP handshake, so it should be a single
   round trip. The captive portal detection is done by comparing the response
   status and body to those provided to the function. N.B.: Only the first 1024
   bytes of the response are used.
-  Returns (float, bool): latency in ms and whether the response was as expected.
-  If no connection can be established, returns (0.0, None). If an error is
-  encountered at any point, returns None for the second value."""
+  Returns (float, bool): latency in milliseconds and whether the response looks
+  intercepted. If no connection can be established, returns (0.0, None). If an
+  error is encountered at any point, returns None for the second value."""
   # See Google Chrome's methods for captive portal detection:
   # http://www.chromium.org/chromium-os/chromiumos-design-docs/network-portal-detection
   #TODO: Maybe go back to http://www.nsto.co/misc/access.txt
@@ -428,10 +430,10 @@ def ping_and_check(server='www.gstatic.com', path='/generate_204', status=204, b
     return (elapsed, None)
   conex.close()
   if response.status == status and response.read(1024) == body[:1024]:
-    expected = True
+    intercepted = False
   else:
-    expected = False
-  return (elapsed, expected)
+    intercepted = True
+  return (elapsed, intercepted)
 
 
 def write_history(history_file, history):
@@ -442,7 +444,7 @@ def write_history(history_file, history):
       filehandle.write("{}\t{}\n".format(timestamp, status))
 
 
-def log(logfile, result, now, method=None):
+def log(logfile, result, now, intercepted=None, method=None):
   """Log the result of the ping to the given log file.
   Writes the ping milliseconds ("result"), current timestamp ("now"), wifi SSID,
   and wifi MAC address as separate columns in a line appended to the file.
@@ -454,7 +456,10 @@ def log(logfile, result, now, method=None):
   if wifi_interface != active_interface:
     ssid = ''
     mac = ipwraplib.get_mac_from_ip(default_route)
-  columns = [result, now, ssid, mac, method]
+  if intercepted is True:
+    columns = [0, now, ssid, mac, method]
+  else:
+    columns = [result, now, ssid, mac, method]
   line = "\t".join(map(format_value, columns))+'\n'
   with open(logfile, 'a') as filehandle:
     filehandle.write(line)
