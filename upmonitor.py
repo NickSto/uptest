@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+#TODO: Note interception in log file and show in upview.py.
 #TODO: Try requests library instead of httplib (can be packaged with the code).
 #TODO: Maybe an algorithm to automatically switch to curl if there's a streak of failed pings (so no
 #      manual intervention is needed).
@@ -28,6 +29,7 @@ HISTORY_FILENAME = 'uphistory.txt'
 STATUS_FILENAME = 'upstatus.txt'
 CONFIG_FILENAME = 'upmonitor.cfg'
 SHUTDOWN_STATUS = '[OFFLINE]'
+HTTPLIB_PARAMS = {'server':'www.gstatic.com', 'path':'/generate_204', 'status':204, 'body':''}
 
 OPT_DEFAULTS = {'server':'google.com', 'history_length':5, 'frequency':5, 'timeout':2,
                 'method':'ping'}
@@ -49,7 +51,8 @@ def main():
   OPT_TYPES['stdout'] = tobool
 
   parser.add_argument('-s', '--server',
-    help='The server to ping. Default: %(default)s')
+    help='The server to ping. Will be ignored when using httplib --method and '
+         +HTTPLIB_PARAMS['server']+' will be used instead. Default: %(default)s')
   parser.add_argument('-o', '--stdout', action='store_true',
     help='Print status summary to stdout instead of a file.')
   parser.add_argument('-f', '--frequency', type=OPT_TYPES['frequency'],
@@ -58,8 +61,12 @@ def main():
   parser.add_argument('-l', '--history-length', metavar='LENGTH', type=OPT_TYPES['history_length'],
     help='The number of previous ping tests to keep track of and display. Default: %(default)s')
   parser.add_argument('-m', '--method', choices=('ping', 'curl', 'httplib'),
-    help='Select method to use for determining connection status, latency, and (in the case of '
-         'httplib) connection interception. Default: %(default)s')
+    help='Select method to use for determining connection information. "ping" uses the ping '
+         'command, "curl" uses the curl command to send an HTTP GET request to the server\'s root '
+         '("/") path, and httplib makes an HTTP GET request to http://'+HTTPLIB_PARAMS['server']
+         +HTTPLIB_PARAMS['path']+' and checks the result to detect captive portals, counting '
+         'interception as an offline status and indicating the it in the status display with a '
+         '"!". Default: %(default)s')
   parser.add_argument('-t', '--timeout', type=OPT_TYPES['timeout'],
     help='Seconds to wait for a response to each ping. Cannot be greater than "frequency". '
          'Default: %(default)s')
@@ -73,11 +80,13 @@ def main():
          'device you\'re actually using (like an Ethernet switch).')
   parser.add_argument('-d', '--data-dir', metavar='DIRNAME', type=OPT_TYPES['data_dir'],
     help='The directory where data will be stored. History data will be kept in DIRNAME/'
-         +HISTORY_FILENAME+', the status summary will be in DIRNAME/'+STATUS_FILENAME+', and '
+         +HISTORY_FILENAME+', the status display will be in DIRNAME/'+STATUS_FILENAME+', and '
          'configuration settings will be written to DIRNAME/'+CONFIG_FILENAME+'. Default: ~/'
          +DATA_DIR_DEFAULT)
 
   args = parser.parse_args()
+  if args.method == 'httplib':
+    args.server = HTTPLIB_PARAMS['server']
   check_config(args)
 
   # Determine file paths.
@@ -160,7 +169,7 @@ def main():
 
     # Ping and get status.
     if args.method == 'httplib':
-      (result, intercepted) = ping_and_check(timeout=args.timeout)
+      (result, intercepted) = ping_and_check(timeout=args.timeout, **HTTPLIB_PARAMS)
     else:
       result = ping(args.server, method=args.method, timeout=args.timeout, ping_ver=ping_ver)
       intercepted = None
@@ -303,6 +312,12 @@ def check_config(args, old_args=None):
       raise AssertionError('Given log file is an invalid pathname.')
     else:
       args.logfile = old_args.logfile
+  if args.method == 'httplib' and args.server != HTTPLIB_PARAMS['server']:
+    if old_args is None:
+      raise AssertionError('Server cannot be changed from the default when using httplib.')
+    else:
+      args.method = old_args.method
+      args.server = old_args.server
 
 
 def get_history(history_file, history_length):
@@ -348,6 +363,7 @@ def ping(server, method='ping', timeout=2, ping_ver=None):
   assert method in ['ping', 'curl'], 'Error: Invalid ping method'
   if method == 'ping':
     # Timeout depends on which version of ping. If it can't be determined, don't use -W.
+    # Maybe try -w?
     if ping_ver == 'iputils':
       command = ['ping', '-n', '-c', '1', '-W', str(timeout), server]
     elif ping_ver == 'bsd':
@@ -400,7 +416,7 @@ def parse_curl(curl_str):
     return 0.0
 
 
-def ping_and_check(server='www.gstatic.com', path='/generate_204', status=204, body='', timeout=2):
+def ping_and_check(timeout=2, server='www.gstatic.com', path='/generate_204', status=204, body=''):
   """"Ping" a server with an HTTP GET request, returning the latency and whether
   the response appears to be intercepted (i.e. by a captive portal).
   By default, uses http://www.gstatic.com/generate_204 and assumes interception
