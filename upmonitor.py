@@ -114,6 +114,9 @@ def main():
     sys.__excepthook__(type_, value, traceback)
   sys.excepthook = invalidate_and_reraise
 
+  # What version of ping?
+  ping_ver = get_ping_version()
+
   # Main loop.
   now = int(time.time())
   target = now + args.frequency
@@ -159,7 +162,7 @@ def main():
     if args.method == 'httplib':
       (result, intercepted) = ping_and_check(timeout=args.timeout)
     else:
-      result = ping(args.server, method=args.method, timeout=args.timeout)
+      result = ping(args.server, method=args.method, timeout=args.timeout, ping_ver=ping_ver)
       intercepted = None
     if result:
       if intercepted is True:
@@ -334,16 +337,23 @@ def prune_history(history, past_points, frequency, now=None):
   return history
 
 
-def ping(server, method='ping', timeout=2):
+def ping(server, method='ping', timeout=2, ping_ver=None):
   """Ping "server", and return the ping time in milliseconds.
   If the ping fails, returns 0.
   If the method is "curl", the returned time is the "time_connect" variable of
   curl's "-w" option (multiplied by 1000 to get ms). In practice the time is
   very similar to a simple ping."""
   devnull = open(os.devnull, 'w')
+  # Build command.
   assert method in ['ping', 'curl'], 'Error: Invalid ping method'
   if method == 'ping':
-    command = ['ping', '-n', '-c', '1', '-W', str(timeout), server]
+    # Timeout depends on which version of ping. If it can't be determined, don't use -W.
+    if ping_ver == 'iputils':
+      command = ['ping', '-n', '-c', '1', '-W', str(timeout), server]
+    elif ping_ver == 'bsd':
+      command = ['ping', '-n', '-c', '1', '-W', str(timeout*1000), server]
+    else:
+      command = ['ping', '-n', '-c', '1', server]
   elif method == 'curl':
     command = ['curl', '-s', '--output', '/dev/null', '--write-out', r'%{time_connect}',
                '--connect-timeout', str(timeout), server]
@@ -514,6 +524,39 @@ def sleep(target, delay=5, precision=0.1):
     time.sleep(precision)
     now = int(time.time())
   return target + delay
+
+
+def get_ping_version():
+  """Try to determine what version of ping is available.
+  Currently recognizes the BSD and iputils versions, returning "bsd" and
+  "iputils" for them, respectively. For all others, returns the first line of
+  the output of "ping -V". On error, returns None."""
+  devnull = open(os.devnull, 'w')
+  # Call command.
+  try:
+    output = subprocess.check_output(['ping', '-V'], stderr=devnull)
+    exit_status = 0
+  except subprocess.CalledProcessError as cpe:
+    output = cpe.output
+    exit_status = cpe.returncode
+  except OSError:
+    output = ''
+    exit_status = 1
+  finally:
+    devnull.close()
+  # BSD lacks -V option and errors out with exit status 64
+  if exit_status == 64 and output == '':
+    return 'bsd'
+  elif exit_status != 0:
+    return None
+  # Parse output
+  output_lines = output.splitlines()
+  if len(output_lines) == 0:
+    return None
+  if 'iputils' in output_lines[0]:
+    return 'iputils'
+  else:
+    return output_lines[0]
 
 
 def tobool(bool_str):
