@@ -6,6 +6,7 @@ fi
 Silence="$HOME/.local/share/nbsdata/SILENCE"
 SleepDefault=5
 LogfileDefault="$HOME/.local/share/nbsdata/uptest.log"
+TimeoutDefault=4
 Usage="Usage: $(basename $0) [sleep seconds [-l [log]]]
   e.g. $(basename $0) 10 -l log.txt
 sleep seconds: Optional, default is $SleepDefault seconds.
@@ -15,8 +16,11 @@ sleep seconds: Optional, default is $SleepDefault seconds.
     If a filename is given after -l, it will log to that file.
     If silence file named "$Silence" exists, it will stop
     logging until it is gone."
+
+# Read arguments.
 sleep=$SleepDefault
 logfile=$LogfileDefault
+timeout=$TimeoutDefault
 if [[ "$1" ]]; then
   if [[ "$1" =~ ^[0-9]+$ ]]; then
     sleep="$1"
@@ -33,6 +37,20 @@ if [[ "$2" ]] && [[ "$2" == "-l" ]]; then
   echo "Logging to file $logfile"
 fi
 
+# Is it the BSD version of ping?
+bsd=''
+version=$(ping -V 2>/dev/null)
+if ! echo $version | grep -qF iputils; then
+  kernel=$(uname -s | tr '[:upper:]' '[:lower:]')
+  if [[ $kernel == darwin ]] || [[ $kernel =~ bsd$ ]]; then
+    bsd='true'
+  fi
+fi
+# If it's the BSD version, -W is in milliseconds.
+if [[ $bsd ]]; then
+  timeout=$((timeout*1000))
+fi
+
 while [[ 1 ]]; do
   last=$(date +%s)
   sleeptime=$sleep
@@ -42,7 +60,7 @@ while [[ 1 ]]; do
     continue
   fi
   humantime=$(date '+%Y-%m-%d %H:%M:%S')
-  response=$(ping -n -c 1 -W 4 google.com 2>/dev/null | grep 'bytes from')
+  response=$(ping -n -c 1 -W $timeout google.com 2>/dev/null | grep 'bytes from')
   # todo: decide success based on the summary line ("1 received")
   if [[ ${#response} -gt 0 ]]; then
     dest=$(echo $response | sed -E 's/^.* from ([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+): .*$/\1/')
