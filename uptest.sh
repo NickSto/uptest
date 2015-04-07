@@ -45,8 +45,8 @@ while [[ 1 ]]; do
   response=$(ping -n -c 1 -W 4 google.com 2>/dev/null | grep 'bytes from')
   # todo: decide success based on the summary line ("1 received")
   if [[ ${#response} -gt 0 ]]; then
-    dest=$(echo $response | sed -E 's/^.*from ([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+): .*$/\1/')
-    ms=$(echo $response | sed -E 's/^[0-9]+ bytes from.*icmp_req=[0-9]+ ttl=[0-9]+ time=([0-9.]+) ms$/\1/')
+    dest=$(echo $response | sed -E 's/^.* from ([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+): .*$/\1/')
+    ms=$(echo $response | sed -E 's/^[0-9]+ bytes from [0-9.]+:.* time=([0-9.]+) ms.*$/\1/')
     if [[ ! $ms =~ [0-9.]{1,6} ]]; then
       echo -e "Error: time regex failed to match line:\n$response" 1>&2
       ms=0
