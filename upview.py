@@ -14,11 +14,10 @@ STARTUP_MSG = 'Waiting for the next ping result..   \t'
 
 OPT_DEFAULTS = {'past_pings':10}
 USAGE = "%(prog)s [options]"
-DESCRIPTION = """Watch a running log of pings being written by upmonitor.py.
-By default, this will watch the log file specified in the configuration file
-"~/"""+DATA_DIRNAME+'/'+CONFIG_FILENAME+'".'
-EPILOG = """Thanks to Kasun Herath for the Python implementation of 'tail -f',
-which this relies on: https://github.com/kasun/python-tail"""
+DESCRIPTION = """Watch a running log of pings being written by upmonitor.py. By default, this will
+watch the log file specified in the configuration file "~/"""+DATA_DIRNAME+'/'+CONFIG_FILENAME+'".'
+EPILOG = """Thanks to Kasun Herath for the Python implementation of 'tail -f', which this relies on:
+https://github.com/kasun/python-tail"""
 
 def main():
 
@@ -40,9 +39,7 @@ def main():
   if args.config:
     config_filepath = args.config
   else:
-    config_filepath = os.path.join(
-      os.path.expanduser('~'), DATA_DIRNAME, CONFIG_FILENAME
-    )
+    config_filepath = os.path.join(os.path.expanduser('~'), DATA_DIRNAME, CONFIG_FILENAME)
 
   # read config file to get path to log file
   if args.log:
@@ -53,8 +50,7 @@ def main():
     try:
       log_filepath = config.get('args', 'logfile')
     except ConfigParser.NoOptionError:
-      fail('Error: Cannot find a log file. Are you sure upmonitor.py is '
-        'writing one?')
+      fail('Error: Cannot find a log file. Are you sure upmonitor.py is writing one?')
 
   # set up the tail, and start following lines appended to the log file
   log_tail = tail.Tail(log_filepath)
