@@ -43,10 +43,18 @@ The status display looks something like "[*oo**]", showing the results of the mo
 (newest on the right). *'s indicate successful pings and o's are dropped pings. All command-line
 options can be changed without interrupting the running process by editing
 ~/"""+DATA_DIR_DEFAULT+'/'+CONFIG_FILENAME+""". Any invalid settings will be ignored."""
+EPILOG = """This is meant as a pragmatic script to give you a quick answer to the question "Am I
+connected?". This can best be answered by simply trying to connect to a server outside your network.
+Using this simple approach means it avoids the intricacies of determining whether each link between
+you and the outside world is functioning: network stack, router, modem, ISP, etc. But it also means
+its answer is only "yes" or "no". Diagnosing a "no" requires more sophisticated tools. This
+philosophy is also why httplib is the recommended method. It simulates as closely as possible the
+normal use of a network connection: making HTTP requests (*without* it being intercepted en route).
+"""
 
 def main():
 
-  parser = argparse.ArgumentParser(description=DESCRIPTION)
+  parser = argparse.ArgumentParser(description=DESCRIPTION, epilog=EPILOG)
   parser.set_defaults(**OPT_DEFAULTS)
   OPT_TYPES['stdout'] = tobool
 
@@ -362,12 +370,11 @@ def ping(server, method='ping', timeout=2, ping_ver=None):
   # Build command.
   assert method in ['ping', 'curl'], 'Error: Invalid ping method'
   if method == 'ping':
-    # Timeout depends on which version of ping. If it can't be determined, don't use -W.
-    # Maybe try -w?
+    # Timeout depends on which version of ping. If it can't be determined, don't set timeout.
     if ping_ver == 'iputils':
-      command = ['ping', '-n', '-c', '1', '-W', str(timeout), server]
+      command = ['ping', '-n', '-c', '1', '-w', str(timeout), server]
     elif ping_ver == 'bsd':
-      command = ['ping', '-n', '-c', '1', '-W', str(timeout*1000), server]
+      command = ['ping', '-n', '-c', '1', '-t', str(timeout), server]
     else:
       command = ['ping', '-n', '-c', '1', server]
   elif method == 'curl':
