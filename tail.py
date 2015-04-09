@@ -48,37 +48,47 @@ class Tail(object):
         Else printed to standard out.
     
         Arguments:
-            s - Number of seconds to wait between each iteration; Defaults to 1. '''
+            s - Number of seconds to wait between processing each line, when multiple new ones
+                are found; Defaults to 1.
+            poll_time - A small time (in seconds) to wait between checks of the file for new lines;
+                        Defaults to 0.01.'''
         last = int(time.time())
         readBuffer = StringIO()
         with open(self.tailed_file, 'rb') as file_:
+            # At the start, seek to the end of the file.
             file_.seek(0, os.SEEK_END)
+            # Start checking the file periodically for new writes.
             while True:
+                # Read from the previous position to the (possibly new) end of the file.
                 readBuffer.write(file_.read())
+                # Start looking through lines in the readBuffer, from the start.
                 readBuffer.seek(0)
                 complete = True
                 for line in readBuffer:
                     if not line.endswith(os.linesep): 
                         complete = False
                         break
-
+                    # Execute the callback on every complete line.
                     self.callback(line)
+                    # Sleep between consecutive lines (even if they appear at the same time).
                     time.sleep(s)
-
+                # Execute the wait function if enough time has passed since the last iteration.
+                # In the end, the wait function should be executed every 1 second (or whatever you
+                # set as the "interval" parameter).
                 if self.wait_func:
                     last = self.run_wait(last)
-                
-                # Catch the slop if the last line isn't complete
+                # Catch the slop if the last line isn't complete, and add it to the readBuffer.
                 readBuffer.truncate(0)
                 if not complete:
                     if len(line) > self.max_line_length:
                         raise TailError("Line exceeds maximum allowed line length")
-
                     readBuffer.write(line)
-                
+                # Sleep briefly, then check the file again.
                 time.sleep(poll_time)
 
     def run_wait(self, last, interval=1):
+        """Run the function self.wait_func every "interval" seconds while waiting for lines."""
+        # Have "interval" seconds passed since "last"? (the last time self.wait_func was executed)
         now = int(time.time())
         if now > last + interval:
             self.wait_func()
