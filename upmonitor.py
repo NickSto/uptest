@@ -1,6 +1,8 @@
 #!/usr/bin/env python
 #TODO: Note interception in log file and show in upview.py.
 #TODO: Try requests library instead of httplib (can be packaged with the code).
+#TODO: Deal with access point caching, i.e of gstatic.com/generate_204 on Greyhound wifi.
+#      Maybe find a way to use https, while still measuring a known number of round trips.
 #TODO: Maybe an algorithm to automatically switch to curl if there's a streak of failed pings (so no
 #      manual intervention is needed).
 #TODO: When your packets are all being dropped, but you have an interface that's "connected" (think
