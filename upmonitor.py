@@ -25,6 +25,7 @@ import subprocess
 import ConfigParser
 import ipwraplib
 
+
 DATA_DIR_DEFAULT = '.local/share/nbsdata'
 SILENCE_FILENAME = 'SILENCE'
 HISTORY_FILENAME = 'uphistory.txt'
@@ -35,9 +36,6 @@ HTTPLIB_PARAMS = {'server':'www.gstatic.com', 'path':'/generate_204', 'status':2
 
 OPT_DEFAULTS = {'server':'google.com', 'history_length':5, 'frequency':5, 'timeout':2,
                 'method':'ping'}
-# Needed to cast the values coming from the config file.
-OPT_TYPES = {'server':str, 'history_length':int, 'frequency':int, 'timeout':int, 'method':str,
-             'logfile':os.path.abspath, 'data_dir':os.path.abspath}
 DESCRIPTION = """Track and summarize the recent history of connectivity by pinging an external
 server. Can print a textual summary figure to stdout or to a file, which can be read and displayed
 by utilities like indicator-sysmonitor. This allows visual monitoring of real, current connectivity.
@@ -54,33 +52,32 @@ philosophy is also why httplib is the recommended method. It simulates as closel
 normal use of a network connection: making HTTP requests (*without* it being intercepted en route).
 """
 
-def main():
 
+def make_parser():
   parser = argparse.ArgumentParser(description=DESCRIPTION, epilog=EPILOG)
   parser.set_defaults(**OPT_DEFAULTS)
-  OPT_TYPES['stdout'] = tobool
-
-  parser.add_argument('-s', '--server',
+  opts = {}
+  opts['server'] = parser.add_argument('-s', '--server',
     help='The server to ping. Will be ignored when using httplib --method and '
          +HTTPLIB_PARAMS['server']+' will be used instead. Default: %(default)s')
-  parser.add_argument('-o', '--stdout', action='store_true',
+  opts['stdout'] = parser.add_argument('-o', '--stdout', action='store_true',
     help='Print status summary to stdout instead of a file.')
-  parser.add_argument('-f', '--frequency', type=OPT_TYPES['frequency'],
+  opts['frequency'] = parser.add_argument('-f', '--frequency', type=int,
     help='How frequently to test the connection. Give the interval time in seconds. Default: '
          '%(default)s')
-  parser.add_argument('-l', '--history-length', metavar='LENGTH', type=OPT_TYPES['history_length'],
+  opts['history_length'] = parser.add_argument('-l', '--history-length', metavar='LENGTH', type=int,
     help='The number of previous ping tests to keep track of and display. Default: %(default)s')
-  parser.add_argument('-m', '--method', choices=('ping', 'curl', 'httplib'),
+  opts['method'] = parser.add_argument('-m', '--method', choices=('ping', 'curl', 'httplib'),
     help='Select method to use for determining connection information. "ping" uses the ping '
          'command, "curl" uses the curl command to send an HTTP GET request to the server\'s root '
          '("/") path, and httplib makes an HTTP GET request to http://'+HTTPLIB_PARAMS['server']
          +HTTPLIB_PARAMS['path']+' and checks the result to detect captive portals, counting '
          'interception as an offline status and indicating the it in the status display with a '
          '"!". Default: %(default)s')
-  parser.add_argument('-t', '--timeout', type=OPT_TYPES['timeout'],
+  opts['timeout'] = parser.add_argument('-t', '--timeout', type=int,
     help='Seconds to wait for a response to each ping. Cannot be greater than "frequency". '
          'Default: %(default)s')
-  parser.add_argument('-L', '--logfile', type=OPT_TYPES['logfile'],
+  opts['logfile'] = parser.add_argument('-L', '--logfile', type=os.path.abspath,
     help='Give a file to log ping history to. Will record the ping latency, the time, and if '
          'possible, the wifi SSID and MAC address (using the iwconfig" command). These will be in '
          '4 tab-delimited columns, one line per ping. This file can be tracked in real-time with '
@@ -88,11 +85,16 @@ def main():
          'be empty (but present). If you\'re connected, but the pings aren\'t going through the '
          'wifi connection, the SSID will be empty but the MAC will be the address of whatever '
          'device you\'re actually using (like an Ethernet switch).')
-  parser.add_argument('-d', '--data-dir', metavar='DIRNAME', type=OPT_TYPES['data_dir'],
+  opts['data_dir'] = parser.add_argument('-d', '--data-dir', metavar='DIRNAME', type=os.path.abspath,
     help='The directory where data will be stored. History data will be kept in DIRNAME/'
          +HISTORY_FILENAME+', the status display will be in DIRNAME/'+STATUS_FILENAME+', and '
          'configuration settings will be written to DIRNAME/'+CONFIG_FILENAME+'. Default: ~/'
          +DATA_DIR_DEFAULT)
+  return (parser, opts)
+
+
+def main():
+  (parser, opts) = make_parser()
 
   args = parser.parse_args()
   if args.method == 'httplib':
@@ -151,7 +153,7 @@ def main():
     try:
       config = ConfigParser.RawConfigParser()
       config.read(config_file)
-      changed = read_config_args(config, args)
+      changed = read_config_args(config, args, opts)
       check_config(args, old_args)
       if config.has_option('meta', 'die') and config.get('meta', 'die').lower() == 'true':
         invalidate_and_exit()
@@ -274,7 +276,7 @@ def write_config(config_file, config, args):
     config.write(filehandle)
 
 
-def read_config_args(config, args):
+def read_config_args(config, args, opts):
   """Read all arguments from config file and update args attributes with them.
   If there is any error reading the file, change nothing and return.
   Return True if there are changes to any argument value."""
@@ -282,7 +284,16 @@ def read_config_args(config, args):
   for arg in config.options('args'):
     # If the option exists, cast it to the proper type and set as args attr.
     if config.has_option('args', arg):
-      cast = OPT_TYPES[arg]
+      # Get a casting function to cast a string to the argument type.
+      if opts[arg].type is not None:
+        cast = opts[arg].type
+      elif opts[arg].default is not None:
+        cast = type(opts[arg].default)
+      else:
+        cast = str
+      if cast is bool:
+        cast = tobool
+      # Get the config value and cast it.
       try:
         new_value = cast(config.get('args', arg))
       except ValueError:
