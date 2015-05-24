@@ -30,9 +30,8 @@ def main():
   parser.add_argument('-n', '--past-pings', metavar='pings', type=int,
     help='How many past pings to output on startup.')
   parser.add_argument('-c', '--config', metavar='configfile.cfg',
-    help='The file containing settings info for the upmonitor process, '
-      'including where to find the log file. Default: ~/'+DATA_DIRNAME+'/'
-      +CONFIG_FILENAME)
+    help='The file containing settings info for the upmonitor process, including where to find the '
+         'log file. Default: ~/'+DATA_DIRNAME+'/'+CONFIG_FILENAME)
   args = parser.parse_args()
 
   # determine path to config file
@@ -45,6 +44,8 @@ def main():
   if args.log:
     log_filepath = args.log
   else:
+    if not os.path.isfile(config_filepath):
+      fail('Error: Config file "'+config_filepath+'" missing.')
     config = ConfigParser.RawConfigParser()
     config.read(config_filepath)
     try:
@@ -56,8 +57,6 @@ def main():
   log_tail = tail.Tail(log_filepath)
   log_tail.register_callback(callback)
   log_tail.register_wait_func(wait_func)
-  # sys.stdout.write(STARTUP_MSG)
-  # sys.stdout.flush()
   log_tail.get_last(args.past_pings)
   try:
     log_tail.follow(s=1)
