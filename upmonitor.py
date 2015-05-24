@@ -443,16 +443,13 @@ def ping_and_check(timeout=2, server='www.gstatic.com', path='/generate_204', st
   if the response code isn't 204 or the body isn't "". You can customize the
   url and expected response with the respective parameters.
   The latency is determined from the TCP handshake, so it should be a single
-  round trip. The captive portal detection is done by comparing the response
-  status and body to those provided to the function. N.B.: Only the first 1024
-  bytes of the response are used.
+  round trip.
   Returns (float, bool): latency in milliseconds and whether the response looks
   intercepted. If no connection can be established, returns (0.0, None). If an
   error is encountered at any point, returns None for the second value."""
   # See Google Chrome's methods for captive portal detection:
   # http://www.chromium.org/chromium-os/chromiumos-design-docs/network-portal-detection
-  #TODO: Maybe go back to http://www.nsto.co/misc/access.txt
-  #      http://www.gstatic.com/generate_204 sometimes doesn't work.
+  #TODO: http://www.gstatic.com/generate_204 sometimes doesn't work.
   #      i.e. on attwifi
   conex = httplib.HTTPConnection(server, timeout=timeout)
   # .connect() just establishes the TCP connection with a SYN, SYN/ACK, ACK handshake, returning
@@ -475,10 +472,14 @@ def ping_and_check(timeout=2, server='www.gstatic.com', path='/generate_204', st
   except (httplib.HTTPException, socket.error):
     return (elapsed, None)
   conex.close()
-  if response.status == status and response.read(1024) == body[:1024]:
-    intercepted = False
+  # Is the response as expected?
+  # If only an expected status is given (body is None), only that has to match.
+  # If a status and body is given, both have to match. This is a little verbose for clarity.
+  if response.status == status and (body is None or response.read(len(body)) == body):
+    expected = True
   else:
-    intercepted = True
+    expected = False
+  intercepted = not expected
   return (elapsed, intercepted)
 
 
