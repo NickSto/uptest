@@ -24,6 +24,11 @@ import argparse
 import subprocess
 import ConfigParser
 import ipwraplib
+try:
+  import dns.resolver
+  import dns.exception
+except ImportError:
+  pass
 
 
 DATA_DIR_DEFAULT = '.local/share/nbsdata'
@@ -248,6 +253,9 @@ def is_running(config_file):
     # If it's not running, an OSError will be raised with errno ESRCH (no such process).
     try:
       os.kill(pid, 0)
+      #TODO: Check if the process is actually an upmonitor.py one.
+      #      Try psutil package or ps command, if either is available.
+      #      Or maybe just send a special signal to it, and have it react in a detectable way.
       return pid
     except OSError as ose:
       if ose.errno == errno.ESRCH:
@@ -447,6 +455,10 @@ def ping_and_check(timeout=2, server='www.gstatic.com', path='/generate_204', st
   Returns (float, bool): latency in milliseconds and whether the response looks
   intercepted. If no connection can be established, returns (0.0, None). If an
   error is encountered at any point, returns None for the second value."""
+  #TODO: Do DNS lookup first, manually, setting timeout:
+  #      https://stackoverflow.com/questions/8989457/dnspython-setting-query-timeout-lifetime
+  #      Or just use standard library's socket.gethostbyname(), setting timeout using signal.alarm():
+  #      https://stackoverflow.com/questions/492519/timeout-on-a-python-function-call/494273#494273
   # See Google Chrome's methods for captive portal detection:
   # http://www.chromium.org/chromium-os/chromiumos-design-docs/network-portal-detection
   #TODO: http://www.gstatic.com/generate_204 sometimes doesn't work.
@@ -481,6 +493,42 @@ def ping_and_check(timeout=2, server='www.gstatic.com', path='/generate_204', st
     expected = False
   intercepted = not expected
   return (elapsed, intercepted)
+
+
+def dns_lookup(domain, timeout=2):
+  """Do a DNS lookup with a certain timeout, if possible."""
+  # If dns module is installed (and imported).
+  if 'dns' in globals():
+    return dns_lookup_dns(domain, timeout=timeout)
+  else:
+    return dns_lookup_socket(domain)
+
+
+def dns_lookup_dns(domain, timeout=2):
+  """Use "dns" module to look up an IP address, returning in a specified amount of time.
+  Returns None on timeout or error."""
+  resolver = dns.resolver.Resolver()
+  resolver.timeout = timeout
+  resolver.lifetime = timeout
+  try:
+    results = resolver.query(domain)
+  except dns.exception.DNSException:
+    return None
+  try:
+    # Just pick the first IP address returned.
+    return str(results[0])
+  except IndexError:
+    return None
+
+
+def dns_lookup_socket(domain):
+  """Use socket.gethostbyname() to look up an IP address.
+  Returns None on error."""
+  try:
+    ip = socket.gethostbyname(domain)
+  except (socket.timeout, socket.gaierror):
+    return None
+  return ip
 
 
 def write_history(history_file, history):
