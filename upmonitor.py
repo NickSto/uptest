@@ -1,8 +1,7 @@
 #!/usr/bin/env python
-#TODO: Note interception in log file and show in upview.py.
+#TODO: Note interception in log file and show in upview.py. Right now it's shown as "0", the same as
+#      a dropped ping (technically true, but it could be more specific).
 #TODO: Try requests library instead of httplib (can be packaged with the code).
-#TODO: Deal with access point caching, i.e of gstatic.com/generate_204 on Greyhound wifi.
-#      Maybe find a way to use https, while still measuring a known number of round trips.
 #TODO: Maybe an algorithm to automatically switch to curl if there's a streak of failed pings (so no
 #      manual intervention is needed).
 #TODO: When your packets are all being dropped, but you have an interface that's "connected" (think
@@ -459,10 +458,6 @@ def ping_and_check(timeout=2, server='www.gstatic.com', path='/generate_204', st
   #      https://stackoverflow.com/questions/8989457/dnspython-setting-query-timeout-lifetime
   #      Or just use standard library's socket.gethostbyname(), setting timeout using signal.alarm():
   #      https://stackoverflow.com/questions/492519/timeout-on-a-python-function-call/494273#494273
-  # See Google Chrome's methods for captive portal detection:
-  # http://www.chromium.org/chromium-os/chromiumos-design-docs/network-portal-detection
-  #TODO: http://www.gstatic.com/generate_204 sometimes doesn't work.
-  #      i.e. on attwifi
   conex = httplib.HTTPConnection(server, timeout=timeout)
   # .connect() just establishes the TCP connection with a SYN, SYN/ACK, ACK handshake, returning
   # after the final ACK is sent. This is essentially immediately after the SYN/ACK arrives, making
