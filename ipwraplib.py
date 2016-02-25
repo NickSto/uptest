@@ -21,18 +21,23 @@ def get_wifi_info():
   ssid = None
   mac = None
   interface = None
-  # check if iwconfig command is available
-  if not distutils.spawn.find_executable('iwconfig'):
-    return (None, None, None)
-  # call iwconfig
+  iwconfig_cmd = 'iwconfig'
+  # Check if iwconfig command is available. If not, fall back to the common absolute path
+  # /sbin/iwconfig. If this doesn't exist, subprocess will return an OSError anyway.
+  # Note: distutils.spawn.find_executable() fails with an exception if there is no $PATH defined.
+  # So we'll check first for that scenario. (I've actually seen this, for instance in the
+  # environment NetworkManager sets up for scripts in /etc/NetworkManager/dispatcher.d/.
+  if 'PATH' not in os.environ or not distutils.spawn.find_executable(iwconfig_cmd):
+    iwconfig_cmd = '/sbin/iwconfig'
+  # Call iwconfig.
   devnull = open(os.devnull, 'w')
   try:
-    output = subprocess.check_output(['iwconfig'], stderr=devnull)
+    output = subprocess.check_output([iwconfig_cmd], stderr=devnull)
   except (OSError, subprocess.CalledProcessError):
-    return (ssid, mac)
+    return (None, None, None)
   finally:
     devnull.close()
-  # parse ssid and mac from output
+  # Parse ssid and mac from output.
   for line in output.splitlines():
     match = re.search(r'^(\S+)\s+\S', line)
     if match:
@@ -57,18 +62,19 @@ def get_default_route():
   error, returns (None, None)."""
   interface = None
   ip = None
-  # check if 'ip' command is available
-  if not distutils.spawn.find_executable('ip'):
-    return (None, None)
-  # call 'ip route show'
+  ip_cmd = 'ip'
+  # Check if 'ip' command is available. If not, fall back to common absolute path.
+  if 'PATH' not in os.environ or not distutils.spawn.find_executable(ip_cmd):
+    ip_cmd = '/sbin/ip'
+  # Call 'ip route show'.
   devnull = open(os.devnull, 'w')
   try:
-    output = subprocess.check_output(['ip', 'route', 'show'], stderr=devnull)
+    output = subprocess.check_output([ip_cmd, 'route', 'show'], stderr=devnull)
   except (OSError, subprocess.CalledProcessError):
     return (None, None)
   finally:
     devnull.close()
-  # parse output
+  # Parse output.
   for line in output.splitlines():
     match = re.search(DEFAULT_ROUTE_REGEX, line)
     if match:
@@ -82,12 +88,12 @@ def dig_ip(domain):
   """Use 'dig' command to get the first IP returned in a DNS query for 'domain'.
   On error, or no result, returns None."""
   ip = None
-  if not distutils.spawn.find_executable('ip'):
-    return None
+  dig_cmd = 'dig'
+  if 'PATH' not in os.environ or not distutils.spawn.find_executable(dig_cmd):
+    dig_cmd = '/usr/bin/dig'
   devnull = open(os.devnull, 'w')
   try:
-    output = subprocess.check_output(['dig', '+short', '+time=1', '+tries=2',
-                                      domain],
+    output = subprocess.check_output([dig_cmd, '+short', '+time=1', '+tries=2', domain],
                                      stderr=devnull)
   except (OSError, subprocess.CalledProcessError):
     return None
@@ -103,11 +109,12 @@ def get_mac_from_ip(ip):
   """Use 'arp -a' command to look up the MAC address of an IP on the LAN.
   Returns None on error, or if the IP isn't found."""
   mac = None
-  if not distutils.spawn.find_executable('arp'):
-    return None
+  arp_cmd = 'arp'
+  if 'PATH' not in os.environ or not distutils.spawn.find_executable(arp_cmd):
+    arp_cmd = '/usr/sbin/arp'
   devnull = open(os.devnull, 'w')
   try:
-    output = subprocess.check_output(['arp', '-a'], stderr=devnull)
+    output = subprocess.check_output([arp_cmd, '-a'], stderr=devnull)
   except (OSError, subprocess.CalledProcessError):
     return None
   finally:
@@ -123,15 +130,15 @@ def get_mac_from_ip(ip):
 def get_mac():
   """Get your own device's MAC address using uuid.getnode().
   Returns the MAC formatted in standard hex with colons."""
-  # uuid.getnode() returns the MAC as an integer
+  # uuid.getnode() returns the MAC as an integer.
   mac_hex = hex(uuid.getnode())
-  # [2:] removes leading '0x'
+  # [2:] removes leading '0x'.
   mac_hex = mac_hex[2:]
-  # fill in leading 0's, if needed
+  # Fill in leading 0's, if needed.
   mac_hex = ('0' * (13 - len(mac_hex))) + mac_hex
-  # remove trailing 'L'
+  # Remove trailing 'L'.
   mac_hex = mac_hex[:12]
-  # build mac from characters in mac_hex, inserting colons
+  # Build mac from characters in mac_hex, inserting colons.
   mac = ''
   for (i, char) in enumerate(mac_hex):
     if i > 1 and i % 2 == 0:
