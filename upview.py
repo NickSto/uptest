@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+#TODO: Show intercepted pings (0 ms) in output.
 from __future__ import division
 import os
 import sys
