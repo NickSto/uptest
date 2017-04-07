@@ -8,6 +8,14 @@
 #      a wifi router with no internet connection), ping doesn't "obey" the -W timeout, getting stuck
 #      in a DNS lookup. Seems the only way to resolve this situation is to do the DNS yourself and
 #      give ping an actual ip address.
+#TODO: Dealing with hotspots caching responses.
+#      The Cache-Control/Pragma headers might be enough to take care of hotspot caches.
+#      If not, HTTPS would be ideal, but it introduces additional round trips that aren't possible
+#      to disintangle in Python. Instead, I could run a server which I could send a nonce to, then
+#      have it manipulate it in a specific way and return it. Not sure whether to actually encrypt
+#      it with a secret key, which introduces the complexity of key management. In reality, no one's
+#      going to be trying to game this system. So instead I could just use a simple manipulation
+#      (even nonce+1 would work, honestly).
 from __future__ import division
 import re
 import os
@@ -36,7 +44,14 @@ HISTORY_FILENAME = 'uphistory.txt'
 STATUS_FILENAME = 'upstatus.txt'
 CONFIG_FILENAME = 'upmonitor.cfg'
 SHUTDOWN_STATUS = '[OFFLINE]'
-HTTPLIB_PARAMS = {'server':'www.gstatic.com', 'path':'/generate_204', 'status':204, 'body':''}
+HTTP_HEADERS = {'Cache-Control':'no-cache', 'Pragma':'no-cache'}
+DETECTORS = {
+  'google': {'server':'www.gstatic.com', 'path':'/generate_204', 'status':204, 'body':''},
+  'mozilla': {'server':'detectportal.firefox.com', 'path':'/success.txt', 'status':200,
+              'body':'success\n'}
+}
+DETECTOR_ALIASES = {'google.com':'google', 'gstatic.com':'google', 'www.gstatic.com':'google',
+                    'firefox':'mozilla', 'firefox.com':'mozilla', 'detectportal.firefox.com':'mozilla'}
 
 OPT_DEFAULTS = {'server':'google.com', 'history_length':5, 'frequency':5, 'timeout':2,
                 'method':'ping'}
@@ -62,8 +77,8 @@ def make_parser():
   parser.set_defaults(**OPT_DEFAULTS)
   opts = {}
   opts['server'] = parser.add_argument('-s', '--server',
-    help='The server to ping. Will be ignored when using httplib --method and '
-         +HTTPLIB_PARAMS['server']+' will be used instead. Default: %(default)s')
+    help='The server to ping. If --method is "httplib", then give the name of one of the '
+         'following captive portal detectors: '+describe_detectors(DETECTORS)+'.')
   opts['stdout'] = parser.add_argument('-o', '--stdout', action='store_true',
     help='Print status summary to stdout instead of a file.')
   opts['frequency'] = parser.add_argument('-f', '--frequency', type=int,
@@ -74,10 +89,10 @@ def make_parser():
   opts['method'] = parser.add_argument('-m', '--method', choices=('ping', 'curl', 'httplib'),
     help='Select method to use for determining connection information. "ping" uses the ping '
          'command, "curl" uses the curl command to send an HTTP GET request to the server\'s root '
-         '("/") path, and httplib makes an HTTP GET request to http://'+HTTPLIB_PARAMS['server']
-         +HTTPLIB_PARAMS['path']+' and checks the result to detect captive portals, counting '
-         'interception as an offline status and indicating the it in the status display with a '
-         '"!". Default: %(default)s')
+         '("/") path, and httplib makes an HTTP GET request to the selected captive portal '
+         'detector and checks the result against the expected result. If the request succeeded but '
+         'is not what was expected, this counts as an offline result, and this interception is '
+         'represented in the status display with a "!". Default: %(default)s')
   opts['timeout'] = parser.add_argument('-t', '--timeout', type=int,
     help='Seconds to wait for a response to each ping. Cannot be greater than "frequency". '
          'Default: %(default)s')
@@ -89,7 +104,7 @@ def make_parser():
          'be empty (but present). If you\'re connected, but the pings aren\'t going through the '
          'wifi connection, the SSID will be empty but the MAC will be the address of whatever '
          'device you\'re actually using (like an Ethernet switch).')
-  opts['data_dir'] = parser.add_argument('-d', '--data-dir', metavar='DIRNAME', type=os.path.abspath,
+  opts['data_dir'] = parser.add_argument('-D', '--data-dir', metavar='DIRNAME', type=os.path.abspath,
     help='The directory where data will be stored. History data will be kept in DIRNAME/'
          +HISTORY_FILENAME+', the status display will be in DIRNAME/'+STATUS_FILENAME+', and '
          'configuration settings will be written to DIRNAME/'+CONFIG_FILENAME+'. Default: ~/'
@@ -101,8 +116,6 @@ def main():
   (parser, opts) = make_parser()
 
   args = parser.parse_args()
-  if args.method == 'httplib':
-    args.server = HTTPLIB_PARAMS['server']
   check_config(args)
 
   # Determine file paths.
@@ -185,7 +198,9 @@ def main():
 
     # Ping and get status.
     if args.method == 'httplib':
-      (result, intercepted) = ping_and_check(timeout=args.timeout, **HTTPLIB_PARAMS)
+      server = DETECTOR_ALIASES.get(args.server, args.server)
+      detector = DETECTORS[server]
+      (result, intercepted) = ping_and_check(timeout=args.timeout, **detector)
     else:
       result = ping(args.server, method=args.method, timeout=args.timeout, ping_ver=ping_ver)
       intercepted = None
@@ -340,9 +355,9 @@ def check_config(args, old_args=None):
       raise AssertionError('Given log file is an invalid pathname.')
     else:
       args.logfile = old_args.logfile
-  if args.method == 'httplib' and args.server != HTTPLIB_PARAMS['server']:
+  if args.method == 'httplib' and args.server not in DETECTOR_ALIASES and args.server not in DETECTORS:
     if old_args is None:
-      raise AssertionError('Server cannot be changed from the default when using httplib.')
+      raise AssertionError('Server not in list of captive portal detectors.')
     else:
       args.method = old_args.method
       args.server = old_args.server
@@ -471,21 +486,22 @@ def ping_and_check(timeout=2, server='www.gstatic.com', path='/generate_204', st
   after = time.time()
   elapsed = round(1000 * (after - before), 1)
   try:
-    conex.request('GET', path)
+    conex.request('GET', path, None, HTTP_HEADERS)
   except (httplib.HTTPException, socket.error):
     return (elapsed, None)
   try:
     response = conex.getresponse()
   except (httplib.HTTPException, socket.error):
     return (elapsed, None)
-  conex.close()
   # Is the response as expected?
   # If only an expected status is given (body is None), only that has to match.
   # If a status and body is given, both have to match. This is a little verbose for clarity.
-  if response.status == status and (body is None or response.read(len(body)) == body):
+  response_body = response.read(len(body)+1)
+  if response.status == status and (body is None or response_body == body):
     expected = True
   else:
     expected = False
+  conex.close()
   intercepted = not expected
   return (elapsed, intercepted)
 
@@ -637,6 +653,14 @@ def get_ping_version():
     return 'iputils'
   else:
     return output_lines[0]
+
+
+def describe_detectors(detectors):
+  detector_strs = []
+  for name, detector in detectors.items():
+   url = 'http://{server}{path}'.format(**detector)
+   detector_strs.append('"{}" ({})'.format(name, url))
+  return ', '.join(detector_strs[:-1])+' or '+detector_strs[-1]
 
 
 def tobool(bool_str):
