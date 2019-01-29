@@ -585,21 +585,21 @@ def format_value(raw):
 
 def status_format(history, history_length):
   """Create a human-readable status display string out of the recent history."""
-  status_str = u'['
+  status_strs = []
   for (timestamp, status) in history:
     if status == 'up':
-      status_str += u' \u2022'
+      status_strs.append(u'\u2022')
       # status_str += u'\u26AB' # medium bullet
     elif status == 'intercepted':
-      status_str += u' !'
+      status_strs.append(u'!')
     else:
-      # Add a space to left of a run of o's, for aesthetics.
-      if status_str[-1] == u'[' or status_str[-1] == u'\u2022':
-        status_str += u' '
       if status == 'down':
-        status_str += u'o'
-  status_str += u' ]'
-  return status_str
+        # Add a space to left of a run of o's, for aesthetics.
+        if len(status_strs) == 0 or status_strs[-1] == u'\u2022':
+          status_strs.append(u' o')
+        else:
+          status_strs.append(u'o')
+  return u' '.join(status_strs)
 
 
 def sleep(target, delay=5, precision=0.1):
