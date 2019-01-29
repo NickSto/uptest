@@ -17,6 +17,9 @@
 #      going to be trying to game this system. So instead I could just use a simple manipulation
 #      (even nonce+1 would work, honestly).
 from __future__ import division
+from __future__ import print_function
+from __future__ import unicode_literals
+from __future__ import absolute_import
 import re
 import os
 import sys
@@ -227,7 +230,7 @@ def main():
       fail('Error: status file "'+status_file+'" is a non-file.')
     status_str = status_format(history, args.history_length)
     if args.stdout:
-      print status_str
+      print(status_str)
     else:
       with open(status_file, 'w') as filehandle:
         filehandle.write(status_str.encode('utf8'))
@@ -588,18 +591,18 @@ def status_format(history, history_length):
   status_strs = []
   for (timestamp, status) in history:
     if status == 'up':
-      status_strs.append(u'\u2022')
+      status_strs.append('\u2022')
       # status_str += u'\u26AB' # medium bullet
     elif status == 'intercepted':
-      status_strs.append(u'!')
+      status_strs.append('!')
     else:
       if status == 'down':
         # Add a space to left of a run of o's, for aesthetics.
-        if len(status_strs) == 0 or status_strs[-1] == u'\u2022':
-          status_strs.append(u' o')
+        if len(status_strs) == 0 or status_strs[-1] == '\u2022':
+          status_strs.append(' o')
         else:
-          status_strs.append(u'o')
-  return u' '.join(status_strs)
+          status_strs.append('o')
+  return ' '.join(status_strs)
 
 
 def sleep(target, delay=5, precision=0.1):
