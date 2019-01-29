@@ -588,21 +588,26 @@ def format_value(raw):
 
 def status_format(history, history_length):
   """Create a human-readable status display string out of the recent history."""
-  status_strs = []
+  status_str = ''
   for (timestamp, status) in history:
     if status == 'up':
-      status_strs.append('\u2022')
-      # status_str += u'\u26AB' # medium bullet
+      # Represent a successful ping with U+2022 (BULLET).
+      # Alternative: U+26AB (MEDIUM BULLET).
+      # Add spaces between bullets.
+      if not status_str or status_str.endswith('\u2022 '):
+        status_str += '\u2022 '
+      else:
+        status_str += ' \u2022 '
     elif status == 'intercepted':
-      status_strs.append('!')
+      status_str += '!'
     else:
       if status == 'down':
         # Add a space to left of a run of o's, for aesthetics.
-        if len(status_strs) == 0 or status_strs[-1] == '\u2022':
-          status_strs.append(' o')
+        if not status_str or (status_str[-1] != 'o' and status_str[-1] != ' '):
+          status_str += ' o'
         else:
-          status_strs.append('o')
-  return ' '.join(status_strs)
+          status_str += 'o'
+  return status_str
 
 
 def sleep(target, delay=5, precision=0.1):
