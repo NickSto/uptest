@@ -1,8 +1,4 @@
-#!/usr/bin/env python
-from __future__ import division
-from __future__ import print_function
-from __future__ import unicode_literals
-from __future__ import absolute_import
+#!/usr/bin/env python3
 import argparse
 import hashlib
 import logging
@@ -11,6 +7,7 @@ import socket
 import string
 import sys
 import time
+assert sys.version_info.major >= 3, 'Python 3 required'
 
 HASH_CONST = b'Bust those caches!'
 DESCRIPTION = """"""
@@ -41,7 +38,7 @@ def main(argv):
 
   logging.basicConfig(stream=args.log, level=args.volume, format='%(message)s')
 
-  message_bytes = bytes(args.message)
+  message_bytes = bytes(args.message, 'utf8')
 
   sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
   try:
@@ -75,7 +72,7 @@ def get_hash(data, algorithm='sha256'):
 def bytes_to_hex(bytes_data):
   hex_data = ''
   for byte in bytes_data:
-    hex_data += '{:02x}'.format(ord(byte))
+    hex_data += '{:02x}'.format(byte)
   return hex_data
 
 
