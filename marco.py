@@ -9,6 +9,7 @@ import string
 import sys
 import time
 import urllib.parse
+import polo
 assert sys.version_info.major >= 3, 'Python 3 required'
 
 DEFAULT_PORT = 35353
@@ -74,14 +75,20 @@ def main(argv):
   try:
     start = time.time()
     sock.sendto(message_encoded, (args.host, port))
-    data, (addr, port) = sock.recvfrom(1024)
+    logging.info('Sent query; waiting on reply..')
+    response, (addr, port) = sock.recvfrom(1024)
     elapsed = time.time() - start
-    digest = get_hash(HASH_CONST+message_bytes)
+    expected_digest = get_hash(HASH_CONST+message_bytes)
     print('Received response from {} port {} in {:0.1f} ms'.format(addr, port, elapsed*1000))
-    if data == digest:
-      print('Response is as expected: {}'.format(bytes_to_hex(data)))
+    if args.dns:
+      txn_id, query, answer = split_dns_response(response)
+      response_digest = extract_dns_answer(answer)
     else:
-      print('Response differs from expected: {}'.format(bytes_to_hex(digest)))
+      response_digest = response
+    if response_digest == expected_digest:
+      print('Response is as expected: {}'.format(bytes_to_hex(response_digest)))
+    else:
+      print('Response differs from expected: {}'.format(bytes_to_hex(expected_digest)))
   finally:
     sock.close()
 
@@ -112,6 +119,35 @@ def encode_dns_message(message):
                        '255 characters: {}'.format(field))
     message_encoded += length.to_bytes(1, byteorder='big') + bytes(field, 'utf8')
   return message_encoded
+
+
+def split_dns_response(response):
+  txn_id = response[:2]
+  header = response[2:2+len(polo.DNS_HEADER)]
+  if header != polo.DNS_HEADER:
+    raise ValueError('Malformed response header: {}'.format(header))
+  # Find the end of the null-terminated query section.
+  query_end = 2+len(polo.DNS_HEADER) + 1
+  while query_end < len(response) and response[query_end] != 0:
+    query_end += 1
+  if query_end >= len(response):
+    raise ValueError('Query not null-terminated.')
+  query = response[2+len(polo.DNS_HEADER):query_end+len(DNS_FOOTER)]
+  answer = response[query_end+len(DNS_FOOTER):]
+  return txn_id, query, answer
+
+
+def extract_dns_answer(answer):
+  name_pointer = answer[:2]
+  header = answer[2:2+len(polo.DNS_ANSWER_HEADER)]
+  data_section = answer[2+len(polo.DNS_ANSWER_HEADER):]
+  if header != polo.DNS_ANSWER_HEADER:
+    raise ValueError('Malformed response answer header: {}'.format(header))
+  data_len = int.from_bytes(data_section[:2], byteorder='big')
+  if len(data_section) != 2+data_len:
+    raise ValueError('Data section in answer is a different length ({}) than declared ({}).'
+                     .format(len(data_section)-2, data_len))
+  return data_section[2:]
 
 
 def get_rand_string(length):
