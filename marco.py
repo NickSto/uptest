@@ -67,7 +67,8 @@ def main(argv):
 
   message_bytes = bytes(args.message, 'utf8')
   if args.dns:
-    message_encoded = encode_dns_query(args.message)
+    txn_id = get_random_bytes(2)
+    message_encoded = encode_dns_query(args.message, txn_id=txn_id)
   else:
     message_encoded = message_bytes
 
@@ -81,10 +82,13 @@ def main(argv):
     expected_digest = get_hash(HASH_CONST+message_bytes)
     print('Received response from {} port {} in {:0.1f} ms'.format(addr, port, elapsed*1000))
     if args.dns:
-      txn_id, query, answer = split_dns_response(response)
+      response_txn_id, query, answer = split_dns_response(response)
       response_digest = extract_dns_answer(answer)
     else:
       response_digest = response
+    if response_txn_id != txn_id:
+      logging.error('Response transaction ID ({}) is different from query\'s ({}).'
+                    .format(bytes_to_int(response_txn_id), bytes_to_int(txn_id)))
     if response_digest == expected_digest:
       print('Response is as expected: {}'.format(bytes_to_hex(response_digest)))
     else:
@@ -117,7 +121,7 @@ def encode_dns_message(message):
     if length >= 256:
       raise ValueError('Message contains a dot-delimited, url-encoded field longer than '
                        '255 characters: {}'.format(field))
-    message_encoded += length.to_bytes(1, byteorder='big') + bytes(field, 'utf8')
+    message_encoded += int_to_bytes(length, 1) + bytes(field, 'utf8')
   return message_encoded
 
 
@@ -143,7 +147,7 @@ def extract_dns_answer(answer):
   data_section = answer[2+len(polo.DNS_ANSWER_HEADER):]
   if header != polo.DNS_ANSWER_HEADER:
     raise ValueError('Malformed response answer header: {}'.format(header))
-  data_len = int.from_bytes(data_section[:2], byteorder='big')
+  data_len = bytes_to_int(data_section[:2])
   if len(data_section) != 2+data_len:
     raise ValueError('Data section in answer is a different length ({}) than declared ({}).'
                      .format(len(data_section)-2, data_len))
@@ -161,6 +165,14 @@ def get_hash(data, algorithm='sha256'):
   hasher = hashlib.new(algorithm)
   hasher.update(data)
   return hasher.digest()
+
+
+def int_to_bytes(integer, length):
+  return integer.to_bytes(length, byteorder='big')
+
+
+def bytes_to_int(bytes_data):
+  return int.from_bytes(bytes_data, byteorder='big')
 
 
 def bytes_to_hex(bytes_data):
