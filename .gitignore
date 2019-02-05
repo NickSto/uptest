@@ -1,2 +1,6 @@
 logs
+*.txt
 *.pyc
+*.pcapng
+*.log
+*.gz
