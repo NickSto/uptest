@@ -29,16 +29,22 @@ contents of the packet. Specifically, the response is the SHA-256 hash of the co
 with the string "{}". If the client sends different data in each packet, this should avoid any
 caching likely to be found in any captive portal or other intermediaries. And UDP allows easy
 measurement of the connection latency by the client.""".format(str(HASH_CONST, 'utf8'))
-
+EPILOG = """Listening directly on port 53 is not recommended, since it requires running this script
+as root. If you'd like to receive queries on port 53, you should instead use iptables to redirect
+traffic from port 53 to the port this is listening on. If this is listening to {0}, then you can
+use: $ sudo iptables -t nat -I PREROUTING --src 0/0 -p udp --dport 53 -j REDIRECT --to-ports {0}
+""".format(DEFAULT_PORT)
 
 def make_argparser():
-  parser = argparse.ArgumentParser(description=DESCRIPTION)
+  parser = argparse.ArgumentParser(description=DESCRIPTION, epilog=EPILOG)
   parser.add_argument('ip', nargs='?', default='127.0.0.1',
     help='Listen IP address. Default: %(default)s')
   parser.add_argument('-d', '--dns', action='store_true',
-    help='Expect queries in DNS format. Changes the default port to 53.')
-  parser.add_argument('-p', '--port', type=int,
-    help='Port to listen on. Default: {}'.format(DEFAULT_PORT))
+    help='Expect queries in DNS format. The contents will be in the place where the domain name is '
+         'given in a DNS query. This script will then respond with a DNS response, encoding the '
+         'hash where the IP address is normally given.')
+  parser.add_argument('-p', '--port', type=int, default=DEFAULT_PORT,
+    help='Port to listen on. Default: %(default)s')
   parser.add_argument('-l', '--log', type=argparse.FileType('w'), default=sys.stderr,
     help='Print log messages to this file instead of to stderr. Warning: Will overwrite the file.')
   volume = parser.add_mutually_exclusive_group()
@@ -56,17 +62,10 @@ def main(argv):
 
   logging.basicConfig(stream=args.log, level=args.volume, format='%(message)s')
 
-  if args.port:
-    port = args.port
-  elif args.dns:
-    port = 53
-  else:
-    port = DEFAULT_PORT
-
   sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-  sock.bind((args.ip, port))
+  sock.bind((args.ip, args.port))
   if logging.getLogger().getEffectiveLevel() < logging.CRITICAL:
-    print('Listening on {} port {}..'.format(args.ip, port), file=sys.stderr)
+    print('Listening on {} port {}..'.format(args.ip, args.port), file=sys.stderr)
 
   try:
     while True:
@@ -103,6 +102,10 @@ def listen(sock, hash_const=HASH_CONST, dns=False):
     sock.sendto(response, (addr, port))
     logging.info('Replied with hash {}'.format(bytes_to_hex(digest)))
 
+
+#TODO: If the DNS query is malformed, reply with a DNS error.
+#      Can use the RCODE (or "Reply code") section of the flags.
+#      FORMERR is probably appropriate (RCODE value 1).
 
 def split_dns_query(query):
   txn_id = query[:2]
