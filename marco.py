@@ -13,6 +13,7 @@ import polo
 assert sys.version_info.major >= 3, 'Python 3 required'
 
 DEFAULT_PORT = 35353
+CACHING_EXIT_CODE = 13
 HASH_CONST = b'Bust those caches!'
 DNS_HEADER = binascii.unhexlify(
   '0100'  # flags (standard query)
@@ -26,11 +27,15 @@ DNS_FOOTER = binascii.unhexlify(
   '0001'  # query type: A record
   '0001'  # query class: Internet
 )
-DESCRIPTION = """"""
+DESCRIPTION = """Query a server to check the connection between this machine and the Internet.
+Uses a special UDP protocol to avoid caching."""
+EPILOG = """This will exit with the code 0 on a successful check (the connection works) and 1 if
+caching is detected. If the connection doesn't work or the packet gets lost, this will hang.
+""".format(CACHING_EXIT_CODE)
 
 
 def make_argparser():
-  parser = argparse.ArgumentParser(description=DESCRIPTION, add_help=False)
+  parser = argparse.ArgumentParser(description=DESCRIPTION, epilog=EPILOG, add_help=False)
   parser.add_argument('message', nargs='?', default=get_rand_string(12),
     help='Data to send. If not given, this will send a random string.')
   parser.add_argument('-d', '--dns', action='store_true',
@@ -39,6 +44,10 @@ def make_argparser():
     help='Destination host. Give an IP address or domain name. Default: %(default)s')
   parser.add_argument('-p', '--port', type=int,
     help='Port to send to. Default: {}'.format(DEFAULT_PORT))
+  parser.add_argument('-t', '--tsv', action='store_const', dest='format', const='computer',
+    default='human',
+    help='Print results in computer-readable format. Currently it will just print the latency in '
+         'milliseconds.')
   parser.add_argument('-l', '--log', type=argparse.FileType('w'), default=sys.stderr,
     help='Print log messages to this file instead of to stderr. Warning: Will overwrite the file.')
   volume = parser.add_mutually_exclusive_group()
@@ -80,7 +89,10 @@ def main(argv):
     response, (addr, port) = sock.recvfrom(1024)
     elapsed = time.time() - start
     expected_digest = get_hash(HASH_CONST+message_bytes)
-    print('Received response from {} port {} in {:0.1f} ms'.format(addr, port, elapsed*1000))
+    if args.format == 'human':
+      print('Received response from {} port {} in {:0.1f} ms'.format(addr, port, elapsed*1000))
+    else:
+      print('{:0.1f}'.format(elapsed*1000))
     if args.dns:
       response_txn_id, query, answer = split_dns_response(response)
       response_digest = extract_dns_answer(answer)
@@ -90,9 +102,12 @@ def main(argv):
       logging.error('Response transaction ID ({}) is different from query\'s ({}).'
                     .format(bytes_to_int(response_txn_id), bytes_to_int(txn_id)))
     if response_digest == expected_digest:
-      print('Response is as expected: {}'.format(bytes_to_hex(response_digest)))
+      if args.format == 'human':
+        print('Response is as expected: {}'.format(bytes_to_hex(response_digest)))
     else:
-      print('Response differs from expected: {}'.format(bytes_to_hex(expected_digest)))
+      if args.format == 'human':
+        print('Response differs from expected: {}'.format(bytes_to_hex(expected_digest)))
+      return CACHING_EXIT_CODE
   finally:
     sock.close()
 
