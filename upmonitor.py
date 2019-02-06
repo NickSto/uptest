@@ -1,4 +1,9 @@
 #!/usr/bin/env python
+#TODO: Rewrite using asyncio!
+#      Will allow asynchronous pings separate from the main thread.
+#      A good example is under "A more realistic yet simple example" here:
+#      https://hackernoon.com/a-simple-introduction-to-pythons-asyncio-595d9c9ecf8c
+#TODO: Use UDP pings to polo.py
 #TODO: Note interception in log file and show in upview.py. Right now it's shown as "0", the same as
 #      a dropped ping (technically true, but it could be more specific).
 #TODO: Try requests library instead of httplib (can be packaged with the code).
@@ -8,14 +13,7 @@
 #      a wifi router with no internet connection), ping doesn't "obey" the -W timeout, getting stuck
 #      in a DNS lookup. Seems the only way to resolve this situation is to do the DNS yourself and
 #      give ping an actual ip address.
-#TODO: Dealing with hotspots caching responses.
-#      The Cache-Control/Pragma headers might be enough to take care of hotspot caches.
-#      If not, HTTPS would be ideal, but it introduces additional round trips that aren't possible
-#      to disintangle in Python. Instead, I could run a server which I could send a nonce to, then
-#      have it manipulate it in a specific way and return it. Not sure whether to actually encrypt
-#      it with a secret key, which introduces the complexity of key management. In reality, no one's
-#      going to be trying to game this system. So instead I could just use a simple manipulation
-#      (even nonce+1 would work, honestly).
+#TODO: The Cache-Control/Pragma headers might be enough to take care of hotspot caches.
 from __future__ import division
 from __future__ import print_function
 from __future__ import unicode_literals
