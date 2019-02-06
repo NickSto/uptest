@@ -591,21 +591,16 @@ def status_format(history, history_length):
     if status == 'up':
       # Represent a successful ping with U+2022 (BULLET).
       # Alternative: U+26AB (MEDIUM BULLET).
-      # Add spaces between bullets.
-      if not status_str or status_str.endswith('\u2022 '):
-        status_str += '\u2022 '
-      else:
-        status_str += ' \u2022 '
+      status_str += ' \u2022'
     elif status == 'intercepted':
-      status_str += '!'
-    else:
-      if status == 'down':
-        # Add a space to left of a run of o's, for aesthetics.
-        if not status_str or (status_str[-1] != 'o' and status_str[-1] != ' '):
-          status_str += ' o'
-        else:
-          status_str += 'o'
-  return status_str
+      status_str += ' !'
+    elif status == 'down':
+      # Omit the space between o's, for aesthetics.
+      if status_str.endswith('o'):
+        status_str += 'o'
+      else:
+        status_str += ' o'
+  return status_str.lstrip()
 
 
 def sleep(target, delay=5, precision=0.1):
