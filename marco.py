@@ -13,7 +13,9 @@ import polo
 assert sys.version_info.major >= 3, 'Python 3 required'
 
 DEFAULT_PORT = 35353
+FAILURE_EXIT_CODE = 7
 CACHING_EXIT_CODE = 13
+INTERCEPTION_EXIT_CODE = 17
 HASH_CONST = b'Bust those caches!'
 DNS_HEADER = binascii.unhexlify(
   '0100'  # flags (standard query)
@@ -29,9 +31,9 @@ DNS_FOOTER = binascii.unhexlify(
 )
 DESCRIPTION = """Query a server to check the connection between this machine and the Internet.
 Uses a special UDP protocol to avoid caching."""
-EPILOG = """This will exit with the code 0 on a successful check (the connection works) and 1 if
-caching is detected. If the connection doesn't work or the packet gets lost, this will hang.
-""".format(CACHING_EXIT_CODE)
+EPILOG = """This will exit with the code 0 on a successful check (the connection works), {} if no
+connection can be made, and {} if caching is detected. If the the packet gets lost, this will hang.
+""".format(FAILURE_EXIT_CODE, CACHING_EXIT_CODE)
 
 
 def make_argparser():
@@ -74,6 +76,9 @@ def main(argv):
   else:
     port = DEFAULT_PORT
 
+  #TODO: Use getaddrinfo() to support IPv6.
+  ip = socket.gethostbyname(args.host)
+
   message_bytes = bytes(args.message, 'utf8')
   if args.dns:
     txn_id = get_random_bytes(2)
@@ -84,7 +89,11 @@ def main(argv):
   sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
   try:
     start = time.time()
-    sock.sendto(message_encoded, (args.host, port))
+    try:
+      sock.sendto(message_encoded, (ip, port))
+    except OSError:
+      logging.critical('Error: Could not connect to remote server.')
+      return FAILURE_EXIT_CODE
     logging.info('Sent query; waiting on reply..')
     response, (addr, port) = sock.recvfrom(1024)
     elapsed = time.time() - start
@@ -94,8 +103,13 @@ def main(argv):
     else:
       print('{:0.1f}'.format(elapsed*1000))
     if args.dns:
-      response_txn_id, query, answer = split_dns_response(response)
-      response_digest = extract_dns_answer(answer)
+      try:
+        response_txn_id, query, answer = split_dns_response(response)
+        response_digest = extract_dns_answer(answer)
+      except ValueError as error:
+        logging.warning('Warning: Malformed response. Probably a response from a real DNS server:\n'
+                        +str(error))
+        return INTERCEPTION_EXIT_CODE
     else:
       response_digest = response
     if response_txn_id != txn_id:
@@ -160,6 +174,8 @@ def extract_dns_answer(answer):
   name_pointer = answer[:2]
   header = answer[2:2+len(polo.DNS_ANSWER_HEADER)]
   data_section = answer[2+len(polo.DNS_ANSWER_HEADER):]
+  #TODO: Allow different TTLs. Then we can still decode the data and tell that the problem is
+  #      caching.
   if header != polo.DNS_ANSWER_HEADER:
     raise ValueError('Malformed response answer header: {}'.format(header))
   data_len = bytes_to_int(data_section[:2])
