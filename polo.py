@@ -6,23 +6,11 @@ import logging
 import socket
 import sys
 import urllib.parse
-import marco
+import fauxdns
 assert sys.version_info.major >= 3, 'Python 3 required'
 
 DEFAULT_PORT = 35353
 HASH_CONST = b'Bust those caches!'
-DNS_HEADER = binascii.unhexlify(
-  '8180'  # flags (standard response)
-  '0001'  # 1 question
-  '0001'  # 1 response
-  '0000'  # 0 authority records
-  '0000'  # 0 additional records
-)
-DNS_ANSWER_HEADER = binascii.unhexlify(
-  '0001'      # query type: A record
-  '0001'      # query class: Internet
-  '00000E10'  # TTL: 3600 seconds
-)
 DESCRIPTION = """Reply to pings from upmonitor clients with expected responses.
 This server listens to UDP packets on the given port, and replies with a response derived from the
 contents of the packet. Specifically, the response is the SHA-256 hash of the contents prepended
@@ -81,8 +69,8 @@ def listen(sock, hash_const=HASH_CONST, dns=False):
     contents, (addr, port) = sock.recvfrom(1024)
     if dns:
       try:
-        txn_id, message_encoded = split_dns_query(contents)
-        message = decode_dns_message(message_encoded)
+        txn_id, message_encoded = fauxdns.split_dns_query(contents)
+        message = fauxdns.decode_dns_message(message_encoded)
       except ValueError as error:
         logging.error('Error: Problem parsing incoming query:\n'+str(error))
         continue
@@ -90,10 +78,10 @@ def listen(sock, hash_const=HASH_CONST, dns=False):
     else:
       message_bytes = contents
     logging.info('Received from {} port {}: {!r}'.format(addr, port, message_bytes))
-    digest = get_hash(hash_const+message_bytes)
+    digest = get_hash(message_bytes, hash_const=HASH_CONST)
     if dns:
       try:
-        response = encode_dns_response(txn_id, message_encoded, digest)
+        response = fauxdns.encode_dns_response(txn_id, message_encoded, digest)
       except ValueError as error:
         logging.error('Error: Problem encoding response:\n'+str(error))
         continue
@@ -103,52 +91,9 @@ def listen(sock, hash_const=HASH_CONST, dns=False):
     logging.info('Replied with hash {}'.format(bytes_to_hex(digest)))
 
 
-#TODO: If the DNS query is malformed, reply with a DNS error.
-#      Can use the RCODE (or "Reply code") section of the flags.
-#      FORMERR is probably appropriate (RCODE value 1).
-
-def split_dns_query(query):
-  txn_id = query[:2]
-  header = query[2:2+len(marco.DNS_HEADER)]
-  message_encoded = query[2+len(marco.DNS_HEADER):-len(marco.DNS_FOOTER)]
-  footer = query[-len(marco.DNS_FOOTER):]
-  if header != marco.DNS_HEADER:
-    raise ValueError('Malformed query header: {}'.format(header))
-  if footer != marco.DNS_FOOTER:
-    raise ValueError('Malformed query footer: {}'.format(footer))
-  return txn_id, message_encoded
-
-
-def decode_dns_message(message_encoded):
-  fields = []
-  message_remaining = message_encoded
-  while message_remaining:
-    field_len = message_remaining[0]
-    field_bytes = message_remaining[1:1+field_len]
-    fields.append(str(field_bytes, 'utf8'))
-    message_remaining = message_remaining[1+field_len:]
-  message_quoted = '.'.join(fields)
-  return urllib.parse.unquote_plus(message_quoted)
-
-
-def encode_dns_response(txn_id, message_encoded, digest):
-  response = txn_id + DNS_HEADER + message_encoded + marco.DNS_FOOTER
-  header_len = len(txn_id)+len(marco.DNS_HEADER)
-  try:
-    name_pointer = b'\xc0'+header_len.to_bytes(1, byteorder='big')
-  except OverflowError:
-    raise ValueError('Header length ({}) won\'t fit into a single byte.'.format(header_len))
-  try:
-    digest_len = len(digest).to_bytes(2, byteorder='big')
-  except OverflowError:
-    raise ValueError('Digest length ({}) won\'t fit into two bytes.'.format(digest_len))
-  response += name_pointer + DNS_ANSWER_HEADER + digest_len + digest
-  return response
-
-
-def get_hash(data, algorithm='sha256'):
+def get_hash(data, hash_const=HASH_CONST, algorithm='sha256'):
   hasher = hashlib.new(algorithm)
-  hasher.update(data)
+  hasher.update(hash_const+data)
   return hasher.digest()
 
 
