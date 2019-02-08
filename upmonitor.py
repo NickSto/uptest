@@ -471,6 +471,20 @@ def ping_and_check(timeout=2, server='www.gstatic.com', path='/generate_204', st
   Returns (float, bool): latency in milliseconds and whether the response looks
   intercepted. If no connection can be established, returns (0.0, None). If an
   error is encountered at any point, returns None for the second value."""
+  elapsed, response = ping_http(timeout=timeout, server=server, path=path, body=body)
+  if response is None:
+    return (0.0, None)
+  # Is the response as expected?
+  # If only an expected status is given (body is None), only that has to match.
+  # If a status and body is given, both have to match.
+  if response['status'] == status and (body is None or response['body'] == body):
+    expected = True
+  else:
+    expected = False
+  return (elapsed, not expected)
+
+
+def ping_http(timeout=2, server='www.gstatic.com', path='/generate_204', body=''):
   # Do the DNS lookup outside the timed portion of the connection, where we only want to measure the
   # TCP handshake, not any needed DNS lookup.
   ip = dns_lookup(server, timeout=timeout)
@@ -488,28 +502,23 @@ def ping_and_check(timeout=2, server='www.gstatic.com', path='/generate_204', st
   elapsed = round(1000 * (after - before), 1)
   # Make the HTTP request.
   # We have to define the Host header explicitly to avoid it appearing as the IP address.
+  # Note: This won't work with HTTPS, since the host will be passed in the SNI.
   headers = HTTP_HEADERS.copy()
   headers['Host'] = server
   try:
     conex.request('GET', path, None, headers)
   except (httplib.HTTPException, socket.error):
-    return (elapsed, None)
+    return (0.0, None)
   # Read the HTTP response.
   try:
     response = conex.getresponse()
   except (httplib.HTTPException, socket.error):
-    return (elapsed, None)
-  # Is the response as expected?
-  # If only an expected status is given (body is None), only that has to match.
-  # If a status and body is given, both have to match. This is a little verbose for clarity.
-  response_body = response.read(len(body)+1)
-  if response.status == status and (body is None or response_body == body):
-    expected = True
-  else:
-    expected = False
+    return (0.0, None)
+  # We have to pass back a dict of response values instead of the response itself because you can't
+  # read the response body after the connection is closed.
+  response_dict = {'status':response.status, 'body':response.read(len(body)+1)}
   conex.close()
-  intercepted = not expected
-  return (elapsed, intercepted)
+  return (elapsed, response_dict)
 
 
 def dns_lookup(domain, timeout=2):
