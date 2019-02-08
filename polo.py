@@ -6,7 +6,10 @@ import logging
 import socket
 import sys
 import urllib.parse
-import fauxdns
+try:
+  import fauxdns
+except ImportError:
+  from . import fauxdns
 assert sys.version_info.major >= 3, 'Python 3 required'
 
 TCP_PORT = 18088
@@ -24,8 +27,11 @@ as root. If you'd like to receive queries on port 53, you should instead use ipt
 traffic from port 53 to the port this is listening on. If this is listening to {0}, then you can
 use: $ sudo iptables -t nat -I PREROUTING --src 0/0 -p udp --dport 53 -j REDIRECT --to-ports {0}
 """.format(UDP_PORT)
-#TODO: Figure out how to use nginx to proxy connections to a certain host or url to a different
-#      port, allowing this to co-exist with a website on the same server!
+#TODO: Use nginx to proxy connections to a different port, allowing this to co-exist with a website
+#      on the same server! Should be able to just use "proxy_pass http://localhost:18088":
+#      https://docs.nginx.com/nginx/admin-guide/web-server/reverse-proxy/
+#      But the remote IP address will then appear to be 127.0.0.1, so maybe set a X-Real-IP header.
+#      And make sure the Host isn't set to "localhost".
 
 def make_argparser():
   parser = argparse.ArgumentParser(description=DESCRIPTION, epilog=EPILOG, add_help=False)
