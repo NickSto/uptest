@@ -4,9 +4,15 @@ from __future__ import unicode_literals
 from __future__ import absolute_import
 import os
 import re
-import timeit
+import json
+import random
 import socket
+import string
+import timeit
+import urllib
+import hashlib
 import httplib
+import binascii
 import subprocess
 try:
   import dns.resolver
@@ -17,6 +23,7 @@ except ImportError:
 
 # These headers might take care of hotspot caches.
 HTTP_HEADERS = {'Cache-Control':'no-cache', 'Pragma':'no-cache'}
+HASH_CONST = b'Bust those caches!'
 
 
 def get_ping_version():
@@ -126,9 +133,9 @@ def ping_and_check(timeout=2, server='www.gstatic.com', path='/generate_204', st
   Returns (float, bool): latency in milliseconds and whether the response looks
   intercepted. If no connection can be established, returns (0.0, None). If an
   error is encountered at any point, returns None for the second value."""
-  elapsed, response = ping_http(timeout=timeout, server=server, path=path, body=body)
+  elapsed, response = ping_http(timeout=timeout, server=server, path=path)
   if response is None:
-    return (0.0, None)
+    return 0.0, None
   # Is the response as expected?
   # If only an expected status is given (body is None), only that has to match.
   # If a status and body is given, both have to match.
@@ -136,10 +143,37 @@ def ping_and_check(timeout=2, server='www.gstatic.com', path='/generate_204', st
     expected = True
   else:
     expected = False
-  return (elapsed, not expected)
+  return elapsed, not expected
 
 
-def ping_http(timeout=2, server='www.gstatic.com', path='/generate_204', body=''):
+def ping_with_challenge(server='polo.nstoler.com', path='/uptest/polo', status=200, timeout=2, **kwargs):
+  challenge = get_rand_string(16)
+  post_data = {'challenge':challenge}
+  elapsed, response = ping_http(server=server, path=path, post_data=post_data, timeout=timeout)
+  expected_digest = get_hash(bytes(challenge))
+  if response['status'] != status:
+    return 0.0, None
+  try:
+    response_data = json.loads(response['body'])
+  except ValueError:
+    return elapsed, True
+  try:
+    response_digest = binascii.unhexlify(response_data.get('digest'))
+  except TypeError:
+    return elapsed, True
+  if response_digest == expected_digest:
+    return elapsed, False
+  else:
+    return elapsed, True
+
+
+def get_hash(data, algorithm='sha256', hash_const=HASH_CONST):
+  hasher = hashlib.new(algorithm)
+  hasher.update(hash_const+data)
+  return hasher.digest()
+
+
+def ping_http(timeout=2, server='www.gstatic.com', path='/generate_204', buffer=1024, post_data=None):
   # Do the DNS lookup outside the timed portion of the connection, where we only want to measure the
   # TCP handshake, not any needed DNS lookup.
   ip = dns_lookup(server, timeout=timeout)
@@ -152,7 +186,7 @@ def ping_http(timeout=2, server='www.gstatic.com', path='/generate_204', body=''
   try:
     conex.connect()
   except (httplib.HTTPException, socket.error):
-    return (0.0, None)
+    return 0.0, None
   after = timeit.default_timer()
   elapsed = round(1000 * (after - before), 1)
   # Make the HTTP request.
@@ -160,20 +194,27 @@ def ping_http(timeout=2, server='www.gstatic.com', path='/generate_204', body=''
   # Note: This won't work with HTTPS, since the host will be passed in the SNI.
   headers = HTTP_HEADERS.copy()
   headers['Host'] = server
+  if post_data:
+    method = 'POST'
+    params = urllib.urlencode(post_data)
+    headers['Content-Type'] = 'application/x-www-form-urlencoded'
+  else:
+    method = 'GET'
+    params = None
   try:
-    conex.request('GET', path, None, headers)
+    conex.request(method, path, params, headers)
   except (httplib.HTTPException, socket.error):
-    return (0.0, None)
+    return 0.0, None
   # Read the HTTP response.
   try:
     response = conex.getresponse()
   except (httplib.HTTPException, socket.error):
-    return (0.0, None)
+    return 0.0, None
   # We have to pass back a dict of response values instead of the response itself because you can't
   # read the response body after the connection is closed.
-  response_dict = {'status':response.status, 'body':response.read(len(body)+1)}
+  response_dict = {'status':response.status, 'body':response.read(buffer)}
   conex.close()
-  return (elapsed, response_dict)
+  return elapsed, response_dict
 
 
 def dns_lookup(domain, timeout=2):
@@ -213,3 +254,10 @@ def dns_lookup_socket(domain):
   except (socket.timeout, socket.gaierror):
     return None
   return ip
+
+
+def get_rand_string(length):
+  s = ''
+  for i in range(length):
+    s += random.choice(string.ascii_letters+string.digits)
+  return s

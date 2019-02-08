@@ -39,10 +39,14 @@ SHUTDOWN_STATUS = 'OFFLINE'
 DETECTORS = {
   'google': {'server':'www.gstatic.com', 'path':'/generate_204', 'status':204, 'body':''},
   'mozilla': {'server':'detectportal.firefox.com', 'path':'/success.txt', 'status':200,
-              'body':'success\n'}
+              'body':'success\n'},
+  'nstoler': {'server':'polo.nstoler.com', 'path':'/uptest/polo', 'status':200, 'body':None}
 }
 DETECTOR_ALIASES = {'google.com':'google', 'gstatic.com':'google', 'www.gstatic.com':'google',
+                    'polo':'nstoler', 'nstoler.com':'nstoler', 'polo.nstoler.com':'nstoler',
                     'firefox':'mozilla', 'firefox.com':'mozilla', 'detectportal.firefox.com':'mozilla'}
+METHODS = ('ping', 'curl', 'httplib', 'polo')
+POLO_SERVER = 'nstoler'
 
 OPT_DEFAULTS = {'server':'google.com', 'history_length':5, 'frequency':5, 'timeout':2,
                 'method':'ping'}
@@ -68,8 +72,9 @@ def make_parser():
   parser.set_defaults(**OPT_DEFAULTS)
   opts = {}
   opts['server'] = parser.add_argument('-s', '--server',
-    help='The server to ping. If --method is "httplib", then give the name of one of the '
-         'following captive portal detectors: '+describe_detectors(DETECTORS)+'.')
+    help='The server to ping. If the --method is "ping" or "curl", then give any domain name. '
+         'For "httplib" and "polo" methods, choose from the following captive portal detectors: '
+         +describe_detectors(DETECTORS))
   opts['stdout'] = parser.add_argument('-o', '--stdout', action='store_true',
     help='Print status summary to stdout instead of a file.')
   opts['frequency'] = parser.add_argument('-f', '--frequency', type=int,
@@ -77,13 +82,15 @@ def make_parser():
          '%(default)s')
   opts['history_length'] = parser.add_argument('-l', '--history-length', metavar='LENGTH', type=int,
     help='The number of previous ping tests to keep track of and display. Default: %(default)s')
-  opts['method'] = parser.add_argument('-m', '--method', choices=('ping', 'curl', 'httplib'),
+  opts['method'] = parser.add_argument('-m', '--method', choices=METHODS,
     help='Select method to use for determining connection information. "ping" uses the ping '
          'command, "curl" uses the curl command to send an HTTP GET request to the server\'s root '
-         '("/") path, and httplib makes an HTTP GET request to the selected captive portal '
-         'detector and checks the result against the expected result. If the request succeeded but '
-         'is not what was expected, this counts as an offline result, and this interception is '
-         'represented in the status display with a "!". Default: %(default)s')
+         '("/") path, "httplib" makes an HTTP GET request to the selected captive portal detector, '
+         'and "polo" uses a special challenge/response protcol over HTTP. "httplib" and "polo" '
+         'check if the server returned the expected result. If the request succeeded but is not '
+         'what was expected, this counts as an offline result, and this interception is '
+         'represented in the status display with a "!". The "polo" method can only be used with '
+         'the "{}" server. Default: %(default)s'.format(POLO_SERVER))
   opts['timeout'] = parser.add_argument('-t', '--timeout', type=int,
     help='Seconds to wait for a response to each ping. Cannot be greater than "frequency". '
          'Default: %(default)s')
@@ -189,10 +196,13 @@ def main():
     prune_history(history, args.history_length - 1, args.frequency, now=now)
 
     # Ping and get status.
-    if args.method == 'httplib':
+    if args.method in ('httplib', 'polo'):
       server = DETECTOR_ALIASES.get(args.server, args.server)
       detector = DETECTORS[server]
-      (result, intercepted) = pings.ping_and_check(timeout=args.timeout, **detector)
+    if args.method == 'httplib':
+      result, intercepted = pings.ping_and_check(timeout=args.timeout, **detector)
+    elif args.method == 'polo':
+      result, intercepted = pings.ping_with_challenge(timeout=args.timeout, **detector)
     else:
       result = pings.ping(args.server, method=args.method, timeout=args.timeout, ping_ver=ping_ver)
       intercepted = None
@@ -332,9 +342,9 @@ def check_config(args, old_args=None):
     else:
       args.timeout = old_args.timeout
       args.frequency = old_args.frequency
-  if args.method not in ('ping', 'curl', 'httplib'):
+  if args.method not in METHODS:
     if old_args is None:
-      raise AssertionError('Ping method must be one of "ping", "curl", or "httplib".')
+      raise AssertionError('Ping method must be one of "{}".'.format('", "'.join(METHODS)))
     else:
       args.method = old_args.method
   if args.data_dir and not os.path.isdir(args.data_dir):
@@ -350,6 +360,12 @@ def check_config(args, old_args=None):
   if args.method == 'httplib' and args.server not in DETECTOR_ALIASES and args.server not in DETECTORS:
     if old_args is None:
       raise AssertionError('Server not in list of captive portal detectors.')
+    else:
+      args.method = old_args.method
+      args.server = old_args.server
+  if args.method == 'polo' and DETECTOR_ALIASES.get(args.server, args.server) != POLO_SERVER:
+    if old_args is None:
+      raise AssertionError('"polo" method can only be used with "{}" server'.format(POLO_SERVER))
     else:
       args.method = old_args.method
       args.server = old_args.server
