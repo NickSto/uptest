@@ -4,8 +4,6 @@
 #      A good example is under "A more realistic yet simple example" here:
 #      https://hackernoon.com/a-simple-introduction-to-pythons-asyncio-595d9c9ecf8c
 #TODO: Use HTTP challenge/response protocol from polo.py.
-#TODO: Note interception in log file and show in upview.py. Right now it's shown as "0", the same as
-#      a dropped ping (technically true, but it could be more specific).
 #TODO: Try requests library instead of httplib (can be packaged with the code).
 #TODO: Maybe an algorithm to automatically switch to curl if there's a streak of failed pings (so no
 #      manual intervention is needed).
@@ -217,7 +215,7 @@ def main():
 
     # Log result.
     if args.logfile:
-      log(args.logfile, result, now, intercepted=intercepted, method=args.method)
+      log(args.logfile, result, now, status, method=args.method)
 
     # Write new history back to file.
     if os.path.exists(history_file) and not os.path.isfile(history_file):
@@ -411,7 +409,7 @@ def write_history(history_file, history):
       filehandle.write("{}\t{}\n".format(timestamp, status))
 
 
-def log(logfile, result, now, intercepted=None, method=None):
+def log(logfile, result, now, status, method=None):
   """Log the result of the ping to the given log file.
   Writes the ping milliseconds ("result"), current timestamp ("now"), wifi SSID,
   and wifi MAC address as separate columns in a line appended to the file.
@@ -423,10 +421,10 @@ def log(logfile, result, now, intercepted=None, method=None):
   if wifi_interface != active_interface:
     ssid = ''
     mac = ipwraplib.get_mac_from_ip(default_route)
-  if intercepted is True:
-    columns = [0, now, ssid, mac, method]
+  if status == 'intercepted':
+    columns = [0, now, ssid, mac, method, status]
   else:
-    columns = [result, now, ssid, mac, method]
+    columns = [result, now, ssid, mac, method, status]
   line = "\t".join(map(format_value, columns))+'\n'
   with open(logfile, 'a') as filehandle:
     filehandle.write(line)
