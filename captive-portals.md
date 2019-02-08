@@ -29,6 +29,6 @@ List of known captive portal URLs:
 * http://detectportal.firefox.com/success.txt
 * http://google.com/generate_204
 * http://www.gstatic.com/generate_204
-* http://connectivitycheck.android.com/generate_204
 * http://clients3.google.com/generate_204
+* http://connectivitycheck.android.com/generate_204
 * http://connectivitycheck.gstatic.com/generate_204
