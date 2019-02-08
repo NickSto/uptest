@@ -151,8 +151,10 @@ def ping_with_challenge(server='polo.nstoler.com', path='/uptest/polo', status=2
   post_data = {'challenge':challenge}
   elapsed, response = ping_http(server=server, path=path, post_data=post_data, timeout=timeout)
   expected_digest = get_hash(bytes(challenge))
-  if response['status'] != status:
+  if response is None:
     return 0.0, None
+  if response['status'] != status:
+    return elapsed, True
   try:
     response_data = json.loads(response['body'])
   except ValueError:

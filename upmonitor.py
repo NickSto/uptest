@@ -422,9 +422,8 @@ def log(logfile, result, now, status, method=None):
     ssid = ''
     mac = ipwraplib.get_mac_from_ip(default_route)
   if status == 'intercepted':
-    columns = [0, now, ssid, mac, method, status]
-  else:
-    columns = [result, now, ssid, mac, method, status]
+    result = 0
+  columns = [result, now, ssid, mac, method, status]
   line = "\t".join(map(format_value, columns))+'\n'
   with open(logfile, 'a') as filehandle:
     filehandle.write(line)
