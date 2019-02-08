@@ -3,7 +3,7 @@
 #      Will allow asynchronous pings separate from the main thread.
 #      A good example is under "A more realistic yet simple example" here:
 #      https://hackernoon.com/a-simple-introduction-to-pythons-asyncio-595d9c9ecf8c
-#TODO: Use UDP pings to polo.py
+#TODO: Use HTTP challenge/response protocol from polo.py.
 #TODO: Note interception in log file and show in upview.py. Right now it's shown as "0", the same as
 #      a dropped ping (technically true, but it could be more specific).
 #TODO: Try requests library instead of httplib (can be packaged with the code).
@@ -24,6 +24,7 @@ import sys
 import copy
 import time
 import errno
+import timeit
 import signal
 import socket
 import httplib
@@ -44,7 +45,7 @@ SILENCE_FILENAME = 'SILENCE'
 HISTORY_FILENAME = 'uphistory.txt'
 STATUS_FILENAME = 'upstatus.txt'
 CONFIG_FILENAME = 'upmonitor.cfg'
-SHUTDOWN_STATUS = '[OFFLINE]'
+SHUTDOWN_STATUS = 'OFFLINE'
 HTTP_HEADERS = {'Cache-Control':'no-cache', 'Pragma':'no-cache'}
 DETECTORS = {
   'google': {'server':'www.gstatic.com', 'path':'/generate_204', 'status':204, 'body':''},
@@ -470,26 +471,30 @@ def ping_and_check(timeout=2, server='www.gstatic.com', path='/generate_204', st
   Returns (float, bool): latency in milliseconds and whether the response looks
   intercepted. If no connection can be established, returns (0.0, None). If an
   error is encountered at any point, returns None for the second value."""
-  #TODO: Do DNS lookup first, manually, setting timeout:
-  #      https://stackoverflow.com/questions/8989457/dnspython-setting-query-timeout-lifetime
-  #      Or just use standard library's socket.gethostbyname(), setting timeout using signal.alarm():
-  #      https://stackoverflow.com/questions/492519/timeout-on-a-python-function-call/494273#494273
-  conex = httplib.HTTPConnection(server, timeout=timeout)
-  # .connect() just establishes the TCP connection with a SYN, SYN/ACK, ACK handshake, returning
-  # after the final ACK is sent. This is essentially immediately after the SYN/ACK arrives, making
-  # it a good measure of a single round trip. The only exception is when a DNS request has to be
-  # made first because the IP is no longer in the cache.
-  before = time.time()
+  # Do the DNS lookup outside the timed portion of the connection, where we only want to measure the
+  # TCP handshake, not any needed DNS lookup.
+  ip = dns_lookup(server, timeout=timeout)
+  # Create the connection object.
+  conex = httplib.HTTPConnection(ip, timeout=timeout)
+  # Open a connection to the server. connect() just establishes the TCP connection with a
+  # SYN, SYN/ACK, ACK handshake, returning after the final ACK is sent. This is essentially
+  # immediately after the SYN/ACK arrives, making it a good measure of a single round trip.
+  before = timeit.default_timer()
   try:
     conex.connect()
   except (httplib.HTTPException, socket.error):
     return (0.0, None)
-  after = time.time()
+  after = timeit.default_timer()
   elapsed = round(1000 * (after - before), 1)
+  # Make the HTTP request.
+  # We have to define the Host header explicitly to avoid it appearing as the IP address.
+  headers = HTTP_HEADERS.copy()
+  headers['Host'] = server
   try:
-    conex.request('GET', path, None, HTTP_HEADERS)
+    conex.request('GET', path, None, headers)
   except (httplib.HTTPException, socket.error):
     return (elapsed, None)
+  # Read the HTTP response.
   try:
     response = conex.getresponse()
   except (httplib.HTTPException, socket.error):
@@ -509,10 +514,11 @@ def ping_and_check(timeout=2, server='www.gstatic.com', path='/generate_204', st
 
 def dns_lookup(domain, timeout=2):
   """Do a DNS lookup with a certain timeout, if possible."""
-  # If dns module is installed (and imported).
-  if 'dns' in globals():
+  try:
+    # Try using dns.resolver, if it's installed.
     return dns_lookup_dns(domain, timeout=timeout)
-  else:
+  except NameError:
+    # Otherwise, fall back to socket.gethostbyname().
     return dns_lookup_socket(domain)
 
 
@@ -536,6 +542,8 @@ def dns_lookup_dns(domain, timeout=2):
 def dns_lookup_socket(domain):
   """Use socket.gethostbyname() to look up an IP address.
   Returns None on error."""
+  #TODO: Set timeout using signal.alarm():
+  #      https://stackoverflow.com/questions/492519/timeout-on-a-python-function-call/494273#494273
   try:
     ip = socket.gethostbyname(domain)
   except (socket.timeout, socket.gaierror):
