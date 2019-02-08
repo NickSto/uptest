@@ -83,6 +83,10 @@ def main(argv):
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
   elif transport == 'tcp':
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    # Set these options to free up the port immediately exit:
+    # https://stackoverflow.com/questions/4465959/python-errno-98-address-already-in-use/4466035#4466035
+    # This is probably safe, since it's unlikely the client will re-use the same sending port.
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 
   sock.bind((args.ip, port))
 
