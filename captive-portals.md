@@ -1,7 +1,7 @@
 Captive Portal Detection
 ========================
 
-Currently I use Google's URL: http://www.gstatic.com/generate_204  
+Currently `httplib` uses urls like Google's: http://www.gstatic.com/generate_204  
 If this doesn't return an HTTP 204, then we know we're blocked by an access point.
 See Google Chrome's methods for captive portal detection:  
 http://www.chromium.org/chromium-os/chromiumos-design-docs/network-portal-detection  
