@@ -34,9 +34,13 @@ Find the instructions for using each script by running it with the option `--hel
 
 You've certainly encountered a "captive portal" before. When you connect to a public wifi hotspot, then try to start using your browser, but instead get greeted by a "Welcome! Please accept our terms and conditions.", that's a captive portal. Worse than just blocking your internet access, it intercepts it and replaces it with its own junk. This can play havoc with applications that expect to either get a valid response or none at all.
 
+### The standard detection method
+
 In response, modern operating systems have developed methods for detecting these interlopers. Generally, they send an HTTP request to a standard url, like Mozilla's http://detectportal.firefox.com/success.txt. Then, if they receive the expected response (Mozilla's url always returns the text `success\n`), they know it's a real connection. If the reponse is something else, like a redirect to a wecome page, or the HTML for the welcome page itself, then they know they've been "captured". The `upmonitor.py` method `httplib` does this.
 
-This is great, and the current industry standard. However, I've run into the issue that some portals will cache responses, so that they'll return the correct response even when you're not actually connected! Even worse, some [sadistic portals](http://blog.tanaza.com/blog/bid/318805/iOS-7-and-captive-portal-a-guide-to-captive-portal-requirements) actively try to fool user agents into thinking their
+### The `polo` protocol
+
+The static HTTP response method is great, and it's the current industry standard. However, I've run into the issue that some portals will cache responses, so that they'll return the correct response even when you're not actually connected! Even worse, some [sadistic portals](http://blog.tanaza.com/blog/bid/318805/iOS-7-and-captive-portal-a-guide-to-captive-portal-requirements) actively try to fool user agents into thinking their
 connection isn't blocked even though it is.¹ That's why I developed the `polo` protocol to distinguish a real connection from an illusion. Basically, it not only makes an HTTP connection to a standard url, but it also sends a "challenge" (16 random characters). The server then [hashes](https://simple.wikipedia.org/wiki/Cryptographic_hash_function) this challenge and returns it. `upmonitor.py` then checks it's the right hash, and if so, it knows this is a real internet connection. This defeats caching and any captive portals deliberately trying to fool clients.
 
 Of course, if anyone wanted to target this protocol specifically, they could easily spoof it. For now, I'm relying on obscurity, which is good enough when I'm the only one using this. But the protocol could easily be made spoof-proof by having the server cryptographically sign the response. That'd be a fun project at some point, but it's not necessary yet.
