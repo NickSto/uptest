@@ -4,12 +4,12 @@ from __future__ import unicode_literals
 from __future__ import absolute_import
 import os
 import re
+import sys
 import json
 import random
 import socket
 import string
 import timeit
-import urllib
 import hashlib
 import httplib
 import binascii
@@ -19,6 +19,11 @@ try:
   import dns.exception
 except ImportError:
   pass
+PY3 = sys.version_info.major >= 3
+if PY3:
+  import urllib.parse
+else:
+  import urllib
 
 
 # These headers might take care of hotspot caches.
@@ -154,8 +159,12 @@ def ping_with_challenge(server='polo.nstoler.com', path='/uptest/polo', status=2
   and True if it made a connection, but the response wasn't correct. None means it was unable to
   make a connection (through timeout or error)."""
   challenge = get_rand_string(16)
-  post_data = {'challenge':challenge}
-  elapsed, response = ping_http(server=server, path=path, post_data=post_data, timeout=timeout)
+  params = {'challenge':challenge}
+  if PY3:
+    path += '?'+urllib.parse.urlencode(params)
+  else:
+    path += '?'+urllib.urlencode(params)
+  elapsed, response = ping_http(server=server, path=path, timeout=timeout)
   expected_digest = get_hash(bytes(challenge))
   if response is None:
     return 0.0, None
