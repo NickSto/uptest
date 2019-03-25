@@ -146,7 +146,13 @@ def ping_and_check(timeout=2, server='www.gstatic.com', path='/generate_204', st
   return elapsed, not expected
 
 
-def ping_with_challenge(server='polo.nstoler.com', path='/uptest/polo', status=200, timeout=2, **kwargs):
+def ping_with_challenge(server='polo.nstoler.com', path='/uptest/polo', status=200, timeout=2,
+                        **kwargs):
+  """"Ping" a server with the HTTP polo protocol, issuing a challenge and checking the result.
+  Returns the latency of the connection, measured by the time taken for the TCP handshake, and
+  whether the connection looks intercepted. So it will give False if the server passed the challenge
+  and True if it made a connection, but the response wasn't correct. None means it was unable to
+  make a connection (through timeout or error)."""
   challenge = get_rand_string(16)
   post_data = {'challenge':challenge}
   elapsed, response = ping_http(server=server, path=path, post_data=post_data, timeout=timeout)
@@ -179,6 +185,8 @@ def ping_http(timeout=2, server='www.gstatic.com', path='/generate_204', buffer=
   # Do the DNS lookup outside the timed portion of the connection, where we only want to measure the
   # TCP handshake, not any needed DNS lookup.
   ip = dns_lookup(server, timeout=timeout)
+  if ip is None:
+    return 0.0, None
   # Create the connection object.
   conex = httplib.HTTPConnection(ip, timeout=timeout)
   # Open a connection to the server. connect() just establishes the TCP connection with a
