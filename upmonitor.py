@@ -1,16 +1,11 @@
 #!/usr/bin/env python
-#TODO: Rewrite using asyncio!
+#TODO: Use asyncio?
 #      Will allow asynchronous pings separate from the main thread.
 #      A good example is under "A more realistic yet simple example" here:
 #      https://hackernoon.com/a-simple-introduction-to-pythons-asyncio-595d9c9ecf8c
-#TODO: Use HTTP challenge/response protocol from polo.py.
-#TODO: Try requests library instead of httplib (can be packaged with the code).
+#TODO: Try requests library instead of httplib (can be packaged with the code)?
 #TODO: Maybe an algorithm to automatically switch to curl if there's a streak of failed pings (so no
 #      manual intervention is needed).
-#TODO: When your packets are all being dropped, but you have an interface that's "connected" (think
-#      a wifi router with no internet connection), ping doesn't "obey" the -W timeout, getting stuck
-#      in a DNS lookup. Seems the only way to resolve this situation is to do the DNS yourself and
-#      give ping an actual ip address.
 from __future__ import division
 from __future__ import print_function
 from __future__ import unicode_literals
@@ -193,16 +188,21 @@ def main():
     now = int(time.time())
     prune_history(history, args.history_length - 1, args.frequency, now=now)
 
-    # Ping and get status.
+    # Determine the server domain name we're using.
     if args.method in ('httplib', 'polo'):
-      server = DETECTOR_ALIASES.get(args.server, args.server)
-      detector = DETECTORS[server]
+      server_name = DETECTOR_ALIASES.get(args.server, args.server)
+      detector = DETECTORS[server_name]
+      server = detector['server']
+    else:
+      server = args.server
+
+    # Ping and get status.
     if args.method == 'httplib':
       result, intercepted = pings.ping_and_check(timeout=args.timeout, **detector)
     elif args.method == 'polo':
       result, intercepted = pings.ping_with_challenge(timeout=args.timeout, **detector)
     else:
-      result = pings.ping(args.server, method=args.method, timeout=args.timeout, ping_ver=ping_ver)
+      result = pings.ping(server, method=args.method, timeout=args.timeout, ping_ver=ping_ver)
       intercepted = None
     if result:
       if intercepted is True:
@@ -215,7 +215,7 @@ def main():
 
     # Log result.
     if args.logfile:
-      log(args.logfile, result, now, status, method=args.method)
+      log(args.logfile, result, now, status, args.method, server)
 
     # Write new history back to file.
     if os.path.exists(history_file) and not os.path.isfile(history_file):
@@ -409,7 +409,7 @@ def write_history(history_file, history):
       filehandle.write("{}\t{}\n".format(timestamp, status))
 
 
-def log(logfile, result, now, status, method=None):
+def log(logfile, result, now, status, method, server):
   """Log the result of the ping to the given log file.
   Writes the ping milliseconds ("result"), current timestamp ("now"), wifi SSID,
   and wifi MAC address as separate columns in a line appended to the file.
@@ -423,7 +423,7 @@ def log(logfile, result, now, status, method=None):
     mac = ipwraplib.get_mac_from_ip(default_route)
   if status == 'intercepted':
     result = 0
-  columns = [result, now, ssid, mac, method, status]
+  columns = [result, now, ssid, mac, method, server, status]
   line = "\t".join(map(format_value, columns))+'\n'
   with open(logfile, 'a') as filehandle:
     filehandle.write(line)
