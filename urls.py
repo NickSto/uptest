@@ -1,9 +1,9 @@
-from django.conf.urls import url
+from django.urls import re_path
 
 from . import views
 
 app_name = 'uptest'
 
 urlpatterns = [
-  url(r'^polo$', views.reply, name='reply'),
+  re_path(r'^polo$', views.reply, name='reply'),
 ]
